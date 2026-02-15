@@ -1,7 +1,7 @@
 import os
 import logging
 import asyncio
-from typing import Set, Dict, Optional
+from typing import Set, Dict
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 # Conversation states
 BROADCAST_MSG, ASK_BUTTON, BUTTON_TEXT, BUTTON_URL = range(4)
-APK_WAIT = 4  # for /setapk
+APK_WAIT = 4
 LINK_WAIT_TEXT, LINK_WAIT_URL = 5, 6
 
 # Environment variables
@@ -70,7 +70,7 @@ def set_setting(key: str, value: str):
 def is_admin(update: Update) -> bool:
     return update.effective_user.id == ADMIN_ID
 
-# ------------------- /start (chiroyli xabar) -------------------
+# ------------------- /start (yangilangan) -------------------
 async def start(update: Update, context: CallbackContext):
     user = update.effective_user
     add_user(user.id)
@@ -80,9 +80,10 @@ async def start(update: Update, context: CallbackContext):
         "📱 Endi Telegramdan *chiqmagan holda* bets larni amalga oshirishingiz mumkin.\n"
         "🔽 Quyidagi tugmalardan birini tanlang:\n\n"
         "⚡️ *BetsPlay* – tezkor sahifaga o‘tish\n"
-        "📦 *APK yuklash* – so‘nggi versiyani yuklash\n\n"
-        "🎯 *Foydalanuvchilarga qulaylik* – bu bizning asosiy maqsadimiz!\n"
-        "💬 Savol va takliflar uchun @admin ga murojaat qiling."
+        "📦 *APK yuklash* – so‘nggi versiyani yuklab olish\n\n"
+        "🎁 Eng soʻnggi *bonuslar*, *aksiyalar* va *haftalik keshbeklar* aynan shu yerda eʼlon qilinadi!\n"
+        "📲 APK faylni yuklab olish orqali barcha imkoniyatlardan toʻliq foydalaning.\n\n"
+        "👇 Quyidagi tugmalardan birini bosing"
     )
 
     keyboard = []
@@ -113,7 +114,6 @@ async def download_apk(update: Update, context: CallbackContext):
         await query.edit_message_text("❌ APK fayli topilmadi.")
         return
 
-    # Faylni yuborish
     await query.message.reply_document(document=apk_file_id, caption="📦 Betwinner APK")
 
 # ------------------- Admin buyruqlari -------------------
@@ -152,7 +152,7 @@ async def setapk_receive(update: Update, context: CallbackContext):
         return APK_WAIT
 
     file_id = update.message.document.file_id
-    caption = update.message.caption or "📥 APK yuklash"  # agar caption bo‘lmasa, default
+    caption = update.message.caption or "📥 APK yuklash"
 
     set_setting("apk_file_id", file_id)
     set_setting("apk_caption", caption)
@@ -240,10 +240,8 @@ async def button_url(update: Update, context: CallbackContext):
     text = update.message.text
     apk_file_id = get_setting("apk_file_id")
     if text == "/skip" and apk_file_id:
-        # APK tugmasi – callback_data bilan
         button = InlineKeyboardButton(context.user_data['btn_text'], callback_data="download_apk")
     else:
-        # Oddiy URL tugma
         if not text.startswith(('http://', 'https://')):
             await update.message.reply_text("❌ URL noto‘g‘ri. Qaytadan urinib ko‘ring.")
             return BUTTON_URL
@@ -305,7 +303,7 @@ def main():
         states={
             APK_WAIT: [MessageHandler(filters.Document.ALL, setapk_receive)]
         },
-        fallbacks=[CommandHandler("cancel", broadcast_cancel)],  # reuse cancel
+        fallbacks=[CommandHandler("cancel", broadcast_cancel)],
     )
     app.add_handler(setapk_conv)
 
