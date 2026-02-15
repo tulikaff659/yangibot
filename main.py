@@ -1,7 +1,7 @@
 import os
 import logging
 import asyncio
-from typing import Set, Dict, Any
+from typing import Set, Dict, Optional
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -22,13 +22,13 @@ logger = logging.getLogger(__name__)
 
 # Conversation states
 BROADCAST_MSG, ASK_BUTTON, BUTTON_TEXT, BUTTON_URL = range(4)
+APK_WAIT = 4  # for /setapk
+LINK_WAIT_TEXT, LINK_WAIT_URL = 5, 6
 
 # Environment variables
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = os.getenv("ADMIN_ID")
-APK_LINK = os.getenv("APK_LINK", "https://example.com/app.apk")  # o‘zgartiring
 
-# Muhit o‘zgaruvchilarini tekshirish
 missing_vars = []
 if not BOT_TOKEN:
     missing_vars.append("BOT_TOKEN")
@@ -44,7 +44,13 @@ if missing_vars:
 
 # Xotirada ma'lumotlar
 users: Set[int] = set()
-settings: Dict[str, str] = {"apk_enabled": "false"}
+settings: Dict[str, str] = {
+    "apk_enabled": "false",
+    "apk_file_id": "",
+    "apk_caption": "📥 APK yuklash",
+    "link_text": "",
+    "link_url": "",
+}
 
 def add_user(user_id: int):
     users.add(user_id)
@@ -56,7 +62,7 @@ def get_all_users() -> list[int]:
     return list(users)
 
 def get_setting(key: str) -> str:
-    return settings.get(key, "false")
+    return settings.get(key, "")
 
 def set_setting(key: str, value: str):
     settings[key] = value
@@ -64,28 +70,53 @@ def set_setting(key: str, value: str):
 def is_admin(update: Update) -> bool:
     return update.effective_user.id == ADMIN_ID
 
-# /start - chiroyli xabar
+# ------------------- /start (chiroyli xabar) -------------------
 async def start(update: Update, context: CallbackContext):
     user = update.effective_user
     add_user(user.id)
 
     text = (
-        "🌟 *Betwinner rasmiy boti* 🌟\n\n"
-        "Endi Telegramdan *chiqmagan holda* bets larni amalga oshirishingiz mumkin.\n"
-        "Ekran pastki qismidagi *BetsPlay* tugmasini bosib, Betwinner sahifasiga o‘ting va "
-        "bets larni amalga oshiring.\n\n"
-        "✨ *Foydalanuvchilarga qulaylik tilagan holda*, Betwinner! 🎉\n\n"
-        "_Bot orqali har doim yangiliklar va qulayliklar siz bilan._"
+        "✨ *Betwinner rasmiy botiga xush kelibsiz!* ✨\n\n"
+        "📱 Endi Telegramdan *chiqmagan holda* bets larni amalga oshirishingiz mumkin.\n"
+        "🔽 Quyidagi tugmalardan birini tanlang:\n\n"
+        "⚡️ *BetsPlay* – tezkor sahifaga o‘tish\n"
+        "📦 *APK yuklash* – so‘nggi versiyani yuklash\n\n"
+        "🎯 *Foydalanuvchilarga qulaylik* – bu bizning asosiy maqsadimiz!\n"
+        "💬 Savol va takliflar uchun @admin ga murojaat qiling."
     )
 
     keyboard = []
-    if get_setting("apk_enabled") == "true":
-        keyboard.append([InlineKeyboardButton("📥 APK yuklash", url=APK_LINK)])
+
+    # Havola tugmasi (agar o‘rnatilgan bo‘lsa)
+    link_text = get_setting("link_text")
+    link_url = get_setting("link_url")
+    if link_text and link_url:
+        keyboard.append([InlineKeyboardButton(link_text, url=link_url)])
+
+    # APK tugmasi (agar yoqilgan va fayl mavjud bo‘lsa)
+    apk_enabled = get_setting("apk_enabled") == "true"
+    apk_file_id = get_setting("apk_file_id")
+    if apk_enabled and apk_file_id:
+        apk_caption = get_setting("apk_caption") or "📥 APK yuklash"
+        keyboard.append([InlineKeyboardButton(apk_caption, callback_data="download_apk")])
 
     reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
     await update.message.reply_text(text, parse_mode="Markdown", reply_markup=reply_markup)
 
-# /users (admin)
+# ------------------- APK yuklash tugmasi bosilganda -------------------
+async def download_apk(update: Update, context: CallbackContext):
+    query = update.callback_query
+    await query.answer()
+
+    apk_file_id = get_setting("apk_file_id")
+    if not apk_file_id:
+        await query.edit_message_text("❌ APK fayli topilmadi.")
+        return
+
+    # Faylni yuborish
+    await query.message.reply_document(document=apk_file_id, caption="📦 Betwinner APK")
+
+# ------------------- Admin buyruqlari -------------------
 async def users_count(update: Update, context: CallbackContext):
     if not is_admin(update):
         await update.message.reply_text("❌ Bu buyruq faqat admin uchun.")
@@ -93,7 +124,6 @@ async def users_count(update: Update, context: CallbackContext):
     count = get_user_count()
     await update.message.reply_text(f"👥 Foydalanuvchilar soni: {count}")
 
-# /toggle_apk (admin)
 async def toggle_apk(update: Update, context: CallbackContext):
     if not is_admin(update):
         await update.message.reply_text("❌ Bu buyruq faqat admin uchun.")
@@ -104,7 +134,64 @@ async def toggle_apk(update: Update, context: CallbackContext):
     status = "yoqildi ✅" if new == "true" else "o‘chirildi ❌"
     await update.message.reply_text(f"APK tugmasi {status}.")
 
-# ------------------- BROADCAST (tugmalar bilan) -------------------
+# ------------------- /setapk (APK faylini yuklash) -------------------
+async def setapk_start(update: Update, context: CallbackContext):
+    if not is_admin(update):
+        await update.message.reply_text("❌ Bu buyruq faqat admin uchun.")
+        return ConversationHandler.END
+    await update.message.reply_text(
+        "📤 Endi APK faylini (document sifatida) yuboring.\n"
+        "Ixtiyoriy ravishda caption (tugma matni) yozishingiz mumkin.\n"
+        "Bekor qilish uchun /cancel."
+    )
+    return APK_WAIT
+
+async def setapk_receive(update: Update, context: CallbackContext):
+    if not update.message.document:
+        await update.message.reply_text("❌ Iltimos, faylni document sifatida yuboring.")
+        return APK_WAIT
+
+    file_id = update.message.document.file_id
+    caption = update.message.caption or "📥 APK yuklash"  # agar caption bo‘lmasa, default
+
+    set_setting("apk_file_id", file_id)
+    set_setting("apk_caption", caption)
+
+    await update.message.reply_text(f"✅ APK fayli saqlandi!\nTugma matni: {caption}")
+    return ConversationHandler.END
+
+# ------------------- /setlink (havola tugmasini o‘rnatish) -------------------
+async def setlink_start(update: Update, context: CallbackContext):
+    if not is_admin(update):
+        await update.message.reply_text("❌ Bu buyruq faqat admin uchun.")
+        return ConversationHandler.END
+    await update.message.reply_text(
+        "🔗 Endi tugma matnini yuboring (masalan: *BetsPlay*).\n"
+        "Bekor qilish uchun /cancel.",
+        parse_mode="Markdown"
+    )
+    return LINK_WAIT_TEXT
+
+async def setlink_text(update: Update, context: CallbackContext):
+    context.user_data['link_text'] = update.message.text
+    await update.message.reply_text("🌐 Endi URL manzilini yuboring (masalan: https://example.com).")
+    return LINK_WAIT_URL
+
+async def setlink_url(update: Update, context: CallbackContext):
+    url = update.message.text
+    if not url.startswith(('http://', 'https://')):
+        await update.message.reply_text("❌ URL 'http://' yoki 'https://' bilan boshlanishi kerak. Qaytadan urinib ko‘ring.")
+        return LINK_WAIT_URL
+
+    text = context.user_data.get('link_text', 'Batafsil')
+    set_setting("link_text", text)
+    set_setting("link_url", url)
+
+    await update.message.reply_text(f"✅ Havola tugmasi saqlandi:\nMatn: {text}\nURL: {url}")
+    context.user_data.clear()
+    return ConversationHandler.END
+
+# ------------------- Broadcast (tugma qo‘shish imkoniyati bilan) -------------------
 async def broadcast_start(update: Update, context: CallbackContext):
     if not is_admin(update):
         await update.message.reply_text("❌ Bu buyruq faqat admin uchun.")
@@ -118,7 +205,6 @@ async def broadcast_start(update: Update, context: CallbackContext):
     return BROADCAST_MSG
 
 async def broadcast_receive(update: Update, context: CallbackContext):
-    # Xabarni vaqtincha saqlaymiz
     context.user_data['broadcast_message'] = update.message
     keyboard = [
         [InlineKeyboardButton("➕ Tugma qo‘shish", callback_data="add_btn")],
@@ -138,8 +224,7 @@ async def button_choice(update: Update, context: CallbackContext):
     if query.data == "add_btn":
         await query.edit_message_text("Tugma matnini yuboring:")
         return BUTTON_TEXT
-    else:  # no_btn
-        # To‘g‘ridan-to‘g‘ri yuborish
+    else:
         await send_broadcast(query, context, None)
         return ConversationHandler.END
 
@@ -153,19 +238,21 @@ async def button_text(update: Update, context: CallbackContext):
 
 async def button_url(update: Update, context: CallbackContext):
     text = update.message.text
-    if text == "/skip":
-        url = APK_LINK
-        btn_text = context.user_data.get('btn_text', "📥 APK yuklash")
+    apk_file_id = get_setting("apk_file_id")
+    if text == "/skip" and apk_file_id:
+        # APK tugmasi – callback_data bilan
+        button = InlineKeyboardButton(context.user_data['btn_text'], callback_data="download_apk")
     else:
-        url = text
-        btn_text = context.user_data['btn_text']
+        # Oddiy URL tugma
+        if not text.startswith(('http://', 'https://')):
+            await update.message.reply_text("❌ URL noto‘g‘ri. Qaytadan urinib ko‘ring.")
+            return BUTTON_URL
+        button = InlineKeyboardButton(context.user_data['btn_text'], url=text)
 
-    button = InlineKeyboardButton(btn_text, url=url)
     await send_broadcast(update, context, button)
     return ConversationHandler.END
 
 async def send_broadcast(update_or_query, context: CallbackContext, button=None):
-    # Xabarni olish
     msg = context.user_data.get('broadcast_message')
     if not msg:
         await (update_or_query.message.reply_text("Xatolik: xabar topilmadi."))
@@ -175,7 +262,6 @@ async def send_broadcast(update_or_query, context: CallbackContext, button=None)
     sent = failed = 0
     reply_markup = InlineKeyboardMarkup([[button]]) if button else None
 
-    # Xabar borligini bildirish
     await (update_or_query.message.reply_text(
         f"⏳ Xabar {len(users_list)} ta foydalanuvchiga yuborilmoqda..."
     ))
@@ -192,8 +278,6 @@ async def send_broadcast(update_or_query, context: CallbackContext, button=None)
     await (update_or_query.message.reply_text(
         f"✅ Yuborildi: {sent}\n❌ Xatolik: {failed}"
     ))
-
-    # Tozalash
     context.user_data.clear()
 
 async def broadcast_cancel(update: Update, context: CallbackContext):
@@ -201,11 +285,11 @@ async def broadcast_cancel(update: Update, context: CallbackContext):
     context.user_data.clear()
     return ConversationHandler.END
 
-# Noma'lum buyruqlar
+# ------------------- Noma'lum buyruqlar -------------------
 async def unknown(update: Update, context: CallbackContext):
     await update.message.reply_text("❓ Tushunarsiz buyruq.")
 
-# ------------------- Asosiy funksiya -------------------
+# ------------------- Asosiy -------------------
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
@@ -213,8 +297,30 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("users", users_count))
     app.add_handler(CommandHandler("toggle_apk", toggle_apk))
+    app.add_handler(CallbackQueryHandler(download_apk, pattern="^download_apk$"))
 
-    # Broadcast conversation handler
+    # /setapk conversation
+    setapk_conv = ConversationHandler(
+        entry_points=[CommandHandler("setapk", setapk_start)],
+        states={
+            APK_WAIT: [MessageHandler(filters.Document.ALL, setapk_receive)]
+        },
+        fallbacks=[CommandHandler("cancel", broadcast_cancel)],  # reuse cancel
+    )
+    app.add_handler(setapk_conv)
+
+    # /setlink conversation
+    setlink_conv = ConversationHandler(
+        entry_points=[CommandHandler("setlink", setlink_start)],
+        states={
+            LINK_WAIT_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, setlink_text)],
+            LINK_WAIT_URL: [MessageHandler(filters.TEXT & ~filters.COMMAND, setlink_url)],
+        },
+        fallbacks=[CommandHandler("cancel", broadcast_cancel)],
+    )
+    app.add_handler(setlink_conv)
+
+    # Broadcast conversation
     broadcast_conv = ConversationHandler(
         entry_points=[CommandHandler("broadcast", broadcast_start)],
         states={
@@ -230,7 +336,6 @@ def main():
     # Noma'lum buyruqlar
     app.add_handler(MessageHandler(filters.COMMAND, unknown))
 
-    # Botni ishga tushirish
     app.run_polling()
 
 if __name__ == "__main__":
