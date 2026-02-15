@@ -2,9 +2,8 @@ import os
 import logging
 import asyncio
 from datetime import datetime
-from typing import Optional
+from typing import Set, Dict
 
-import asyncpg
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
@@ -44,92 +43,29 @@ except ValueError:
 if missing_vars:
     raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
 
-# Database connection
-DATABASE_URL = os.getenv("DATABASE_URL")
-if not DATABASE_URL:
-    # Try to build from individual variables (Railway provides these)
-    pg_host = os.getenv("PGHOST")
-    pg_port = os.getenv("PGPORT", "5432")
-    pg_user = os.getenv("PGUSER")
-    pg_password = os.getenv("PGPASSWORD")
-    pg_database = os.getenv("PGDATABASE")
-    if all([pg_host, pg_user, pg_password, pg_database]):
-        DATABASE_URL = f"postgresql://{pg_user}:{pg_password}@{pg_host}:{pg_port}/{pg_database}"
-        logger.info("DATABASE_URL built from individual PG variables")
-    else:
-        raise ValueError("Neither DATABASE_URL nor individual PG variables found. Add PostgreSQL plugin.")
-
-pool: Optional[asyncpg.Pool] = None
+# In-memory storage
+users: Set[int] = set()
+settings: Dict[str, str] = {"apk_enabled": "false"}
 
 
-async def init_db():
-    """Create tables if they don't exist."""
-    global pool
-    try:
-        pool = await asyncpg.create_pool(DATABASE_URL)
-        async with pool.acquire() as conn:
-            # Users table
-            await conn.execute("""
-                CREATE TABLE IF NOT EXISTS users (
-                    user_id BIGINT PRIMARY KEY,
-                    username TEXT,
-                    first_name TEXT,
-                    last_name TEXT,
-                    registered_at TIMESTAMP DEFAULT NOW()
-                )
-            """)
-            # Settings table
-            await conn.execute("""
-                CREATE TABLE IF NOT EXISTS settings (
-                    key TEXT PRIMARY KEY,
-                    value TEXT
-                )
-            """)
-            # Insert default setting if not exists
-            await conn.execute("""
-                INSERT INTO settings (key, value)
-                VALUES ('apk_enabled', 'false')
-                ON CONFLICT (key) DO NOTHING
-            """)
-        logger.info("Database initialized successfully")
-    except Exception as e:
-        logger.error(f"Database initialization failed: {e}")
-        raise
+def add_user(user_id: int):
+    users.add(user_id)
 
 
-async def add_user(user_id: int, username: str, first_name: str, last_name: str):
-    async with pool.acquire() as conn:
-        await conn.execute("""
-            INSERT INTO users (user_id, username, first_name, last_name, registered_at)
-            VALUES ($1, $2, $3, $4, $5)
-            ON CONFLICT (user_id) DO NOTHING
-        """, user_id, username, first_name, last_name, datetime.now())
+def get_user_count() -> int:
+    return len(users)
 
 
-async def get_user_count() -> int:
-    async with pool.acquire() as conn:
-        return await conn.fetchval("SELECT COUNT(*) FROM users")
+def get_all_users() -> list[int]:
+    return list(users)
 
 
-async def get_all_users() -> list[int]:
-    async with pool.acquire() as conn:
-        rows = await conn.fetch("SELECT user_id FROM users")
-        return [row["user_id"] for row in rows]
+def get_setting(key: str) -> str:
+    return settings.get(key, "false")
 
 
-async def get_setting(key: str) -> str:
-    async with pool.acquire() as conn:
-        value = await conn.fetchval("SELECT value FROM settings WHERE key = $1", key)
-        return value or "false"
-
-
-async def set_setting(key: str, value: str):
-    async with pool.acquire() as conn:
-        await conn.execute("""
-            INSERT INTO settings (key, value)
-            VALUES ($1, $2)
-            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
-        """, key, value)
+def set_setting(key: str, value: str):
+    settings[key] = value
 
 
 def is_admin(update: Update) -> bool:
@@ -139,7 +75,7 @@ def is_admin(update: Update) -> bool:
 # /start command
 async def start(update: Update, context: CallbackContext):
     user = update.effective_user
-    await add_user(user.id, user.username, user.first_name, user.last_name)
+    add_user(user.id)
 
     text = (
         "🌟 *Betwinner rasmiy boti* 🌟\n\n"
@@ -150,7 +86,7 @@ async def start(update: Update, context: CallbackContext):
     )
 
     keyboard = []
-    apk_enabled = await get_setting("apk_enabled")
+    apk_enabled = get_setting("apk_enabled")
     if apk_enabled == "true":
         keyboard.append([InlineKeyboardButton("📥 APK yuklash", url=APK_LINK)])
 
@@ -163,7 +99,7 @@ async def users(update: Update, context: CallbackContext):
     if not is_admin(update):
         await update.message.reply_text("❌ Bu buyruq faqat admin uchun.")
         return
-    count = await get_user_count()
+    count = get_user_count()
     await update.message.reply_text(f"👥 Foydalanuvchilar soni: {count}")
 
 
@@ -173,9 +109,9 @@ async def toggle_apk(update: Update, context: CallbackContext):
         await update.message.reply_text("❌ Bu buyruq faqat admin uchun.")
         return
 
-    current = await get_setting("apk_enabled")
+    current = get_setting("apk_enabled")
     new_value = "false" if current == "true" else "true"
-    await set_setting("apk_enabled", new_value)
+    set_setting("apk_enabled", new_value)
     status = "yoqildi ✅" if new_value == "true" else "oʻchirildi ❌"
     await update.message.reply_text(f"APK tugmasi {status}.")
 
@@ -195,13 +131,13 @@ async def broadcast_start(update: Update, context: CallbackContext):
 
 
 async def broadcast_message(update: Update, context: CallbackContext):
-    users = await get_all_users()
+    users_list = get_all_users()
     sent = 0
     failed = 0
 
-    await update.message.reply_text(f"⏳ Xabar {len(users)} ta foydalanuvchiga yuborilmoqda...")
+    await update.message.reply_text(f"⏳ Xabar {len(users_list)} ta foydalanuvchiga yuborilmoqda...")
 
-    for uid in users:
+    for uid in users_list:
         try:
             await update.message.copy(chat_id=uid)
             sent += 1
@@ -227,12 +163,8 @@ async def unknown(update: Update, context: CallbackContext):
     await update.message.reply_text("❓ Tushunarsiz buyruq.")
 
 
-async def post_init(application: Application):
-    await init_db()
-
-
 def main():
-    application = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
+    application = Application.builder().token(BOT_TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("users", users))
