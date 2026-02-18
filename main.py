@@ -10,7 +10,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
     CommandHandler,
-    CallbackQueryHandler,  # Bu qator qo'shilgan
+    CallbackQueryHandler,
     MessageHandler,
     filters,
     ContextTypes,
@@ -84,6 +84,7 @@ def generate_unique_code() -> str:
             return code
 
 def get_main_keyboard() -> InlineKeyboardMarkup:
+    """Asosiy menyu tugmalari"""
     keyboard = [
         [
             InlineKeyboardButton("📊 Kun stavkasi", callback_data="show_games"),
@@ -97,9 +98,12 @@ def get_main_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(keyboard)
 
 def get_back_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Bosh menyu", callback_data="main_menu")]])
+    """Bosh menyuga qaytish tugmasi"""
+    keyboard = [[InlineKeyboardButton("◀️ Bosh menyu", callback_data="main_menu")]]
+    return InlineKeyboardMarkup(keyboard)
 
 def get_games_keyboard() -> InlineKeyboardMarkup:
+    """Kun stavkalari ro'yxati"""
     keyboard = []
     for game in games_data.keys():
         keyboard.append([InlineKeyboardButton(game, callback_data=f"game_{game}")])
@@ -132,19 +136,21 @@ async def give_start_bonus(user_id: int, context: ContextTypes.DEFAULT_TYPE):
         try:
             await context.bot.send_message(
                 chat_id=user_id,
-                text=f"🎉 Start bonusi: {START_BONUS} so'm berildi!"
+                text=f"🎉 Tabriklaymiz! Sizga start bonusi sifatida {START_BONUS} so‘m berildi."
             )
         except:
             pass
 
-# ------------------- START -------------------
+# ------------------- START HANDLER -------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Start komandasi – eski holatidagidek"""
     user = update.effective_user
     user_id = user.id
     args = context.args
 
     user_data = await ensure_user(user_id)
 
+    # Referralni tekshirish
     if args and args[0].startswith("ref_"):
         try:
             ref_user_id = int(args[0].replace("ref_", ""))
@@ -153,37 +159,67 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 users_data[str(ref_user_id)]["balance"] += REFERRAL_BONUS
                 users_data[str(ref_user_id)]["referrals"] += 1
                 save_users(users_data)
-                await context.bot.send_message(
-                    chat_id=ref_user_id,
-                    text=f"🎉 Yangi foydalanuvchi qo'shildi! +{REFERRAL_BONUS} so'm"
-                )
+                try:
+                    await context.bot.send_message(
+                        chat_id=ref_user_id,
+                        text=f"🎉 Sizning taklifingiz orqali yangi foydalanuvchi qo‘shildi! Balansingizga {REFERRAL_BONUS} so‘m qo‘shildi."
+                    )
+                except:
+                    pass
         except:
             pass
 
+    # Start bonusini rejalashtirish
     if not user_data.get("start_bonus_given", False):
         asyncio.create_task(give_start_bonus(user_id, context))
 
+    # Eski start xabari
     text = (
-        "🎰 *BetWinner Botiga xush kelibsiz!*\n\n"
-        "✅ Do'stlaringizni taklif qiling va pul ishlang\n"
-        "✅ Kunlik stavkalarni oling\n"
-        "✅ BetWinner APK yuklab oling"
+        "🎰 *BetWinner Bukmekeriga xush kelibsiz!* 🎰\n\n"
+        "🔥 *Premium bonuslar* va har hafta yangi yutuqlar sizni kutmoqda!\n"
+        "📊 *O‘yinlar uchun maxsus signal xizmati* orqali g‘alaba qozonish imkoniyatingizni oshiring.\n\n"
+        "📢 *BetWinner kun kuponlari* va eng so‘nggi aksiyalar haqida tezkor xabarlar!\n"
+        "✅ Kunlik stavkalar, ekspress kuponlar va bonus imkoniyatlaridan birinchi bo‘lib xabardor bo‘ling.\n\n"
+        "💰 Bu yerda nafaqat o‘ynab, balki *pul ishlashingiz* mumkin:\n"
+        "– Do‘stlaringizni taklif qiling va har bir taklif uchun *2500 so‘m* oling.\n"
+        "– Start bonus sifatida *15000 so‘m* hamyoningizga tushadi.\n\n"
+        "👇 Quyidagi tugmalar orqali imkoniyatlarni kashf eting:"
     )
-    await update.message.reply_text(text, parse_mode="Markdown", reply_markup=get_main_keyboard())
+    await update.message.reply_text(
+        text,
+        parse_mode="Markdown",
+        reply_markup=get_main_keyboard()
+    )
 
 async def back_to_main(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Bosh menyuga qaytish"""
     query = update.callback_query
     await query.answer()
-    await query.message.reply_text("Bosh menyu:", reply_markup=get_main_keyboard())
+    text = (
+        "🎰 *BetWinner Bukmekeriga xush kelibsiz!* 🎰\n\n"
+        "👇 Quyidagi tugmalar orqali imkoniyatlarni kashf eting:"
+    )
+    await query.message.reply_text(
+        text,
+        parse_mode="Markdown",
+        reply_markup=get_main_keyboard()
+    )
 
 # ------------------- KUN STAVKASI -------------------
 async def show_games(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     if not games_data:
-        await query.message.reply_text("Hozircha stavkalar yo'q.", reply_markup=get_back_keyboard())
+        await query.message.reply_text(
+            "Hozircha kunlik stavkalar mavjud emas. Tez orada yangilanadi!",
+            reply_markup=get_back_keyboard()
+        )
         return
-    await query.message.reply_text("📊 Kun stavkalari:", reply_markup=get_games_keyboard())
+    await query.message.reply_text(
+        "📊 *Bugungi kun stavkalari:*",
+        parse_mode="Markdown",
+        reply_markup=get_games_keyboard()
+    )
 
 async def game_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -191,87 +227,97 @@ async def game_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     game_name = query.data.replace("game_", "")
     game = games_data.get(game_name)
     if not game:
-        await query.message.reply_text("Stavka topilmadi.", reply_markup=get_back_keyboard())
+        await query.message.reply_text("Bu kun stavkasi topilmadi.", reply_markup=get_back_keyboard())
         return
 
     game["views"] = game.get("views", 0) + 1
     save_games(games_data)
 
-    text = game.get("text", "Ma'lumot yo'q")
+    text = game.get("text", "Maʼlumot hozircha kiritilmagan.")
     photo_id = game.get("photo_id")
 
     if photo_id:
         await query.message.reply_photo(
             photo=photo_id,
             caption=text,
+            parse_mode="HTML",
             reply_markup=get_back_keyboard()
         )
     else:
-        await query.message.reply_text(text, reply_markup=get_back_keyboard())
+        await query.message.reply_text(
+            text,
+            parse_mode="HTML",
+            reply_markup=get_back_keyboard()
+        )
 
 # ------------------- APK -------------------
 async def show_apk(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """APK tugmasi bosilganda to'g'ridan-to'g'ri APK fayl yuboriladi"""
     query = update.callback_query
     await query.answer()
     
     file_id = apk_data.get("file_id")
     
     if file_id:
-        keyboard = [
-            [InlineKeyboardButton("📥 Yuklash", callback_data="download_apk")],
-            [InlineKeyboardButton("◀️ Bosh menyu", callback_data="main_menu")]
-        ]
-        await query.message.reply_text(
-            "📱 BetWinner APK",
-            reply_markup=InlineKeyboardMarkup(keyboard)
+        # To'g'ridan-to'g'ri APK faylni yuborish
+        await query.message.reply_document(
+            document=file_id,
+            caption="📱 BetWinner APK",
+            reply_markup=get_back_keyboard()
         )
     else:
-        await query.message.reply_text("APK hozircha yo'q.", reply_markup=get_back_keyboard())
+        await query.message.reply_text(
+            "❌ Hozircha APK fayli mavjud emas. Tez orada yuklanadi!",
+            reply_markup=get_back_keyboard()
+        )
 
-async def download_apk(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    file_id = apk_data.get("file_id")
-    if file_id:
-        await query.message.reply_document(document=file_id, reply_markup=get_back_keyboard())
-    else:
-        await query.message.reply_text("APK yo'q.", reply_markup=get_back_keyboard())
-
-# ------------------- PUL ISHLASH -------------------
+# ------------------- PUL ISHLASH VA BALANS -------------------
 async def earn_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
+    referral_link = get_referral_link(query.from_user.id)
+    share_url = f"https://t.me/share/url?url={referral_link}&text=Bu%20bot%20orqali%20pul%20ishlash%20mumkin!%20Keling%2C%20birga%20boshlaymiz."
+    
     text = (
-        "💰 *Pul ishlash*\n\n"
-        f"• Do'st taklif qilish: +{REFERRAL_BONUS} so'm\n"
-        f"• Start bonusi: +{START_BONUS} so'm\n"
-        f"• Minimal yechish: {MIN_WITHDRAW} so'm\n\n"
-        f"Sizning havolangiz:\n`{get_referral_link(query.from_user.id)}`"
+        "💰 *BetWinner bilan qanday qilib pul ishlash mumkin?*\n\n"
+        f"1️⃣ Do‘stlaringizni taklif qiling va har bir taklif uchun *{REFERRAL_BONUS} so‘m* oling.\n"
+        f"2️⃣ Start bonus sifatida *{START_BONUS} so‘m* hamyoningizga tushadi.\n"
+        f"3️⃣ Minimal yechish summasi: *{MIN_WITHDRAW} so‘m*.\n\n"
+        f"Sizning referral havolangiz:\n`{referral_link}`"
     )
     
     keyboard = [
-        [InlineKeyboardButton("📤 Ulashish", url=f"https://t.me/share/url?url={get_referral_link(query.from_user.id)}")],
+        [InlineKeyboardButton("📤 Ulashish", url=share_url)],
         [InlineKeyboardButton("💸 Pul chiqarish", callback_data="withdraw")],
         [InlineKeyboardButton("◀️ Bosh menyu", callback_data="main_menu")]
     ]
-    await query.message.reply_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+    await query.message.reply_text(
+        text,
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
 
 async def balance_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user_data = await ensure_user(query.from_user.id)
+    
     text = (
-        f"💵 *Balans*\n\n"
-        f"Balans: {user_data['balance']} so'm\n"
-        f"Do'stlar: {user_data['referrals']}\n"
-        f"Minimal yechish: {MIN_WITHDRAW} so'm"
+        f"💵 *Sizning balansingiz:*\n\n"
+        f"Balans: *{user_data['balance']} so‘m*\n"
+        f"Taklif qilgan do‘stlaringiz: *{user_data['referrals']}*\n\n"
+        f"Minimal yechish summasi: {MIN_WITHDRAW} so‘m."
     )
     keyboard = [
         [InlineKeyboardButton("💸 Pul chiqarish", callback_data="withdraw")],
         [InlineKeyboardButton("◀️ Bosh menyu", callback_data="main_menu")]
     ]
-    await query.message.reply_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+    await query.message.reply_text(
+        text,
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
 
 async def withdraw_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -280,21 +326,25 @@ async def withdraw_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if user_data['balance'] < MIN_WITHDRAW:
         await query.message.reply_text(
-            f"❌ Yetarli balans yo'q. Sizda: {user_data['balance']} so'm",
+            f"❌ Pul chiqarish uchun minimal balans {MIN_WITHDRAW} so‘m. Sizda {user_data['balance']} so‘m bor.",
             reply_markup=get_back_keyboard()
         )
         return
     
     text = (
         f"💸 *Pul chiqarish*\n\n"
-        f"Kodingiz: `{user_data['withdraw_code']}`\n"
-        f"Saytga o'ting va kodni kiriting:"
+        f"Sizning maxsus 7 xonali kodingiz: `{user_data['withdraw_code']}`\n"
+        f"Pul yechish uchun quyidagi tugma orqali saytga o‘ting va kodni kiriting."
     )
     keyboard = [
-        [InlineKeyboardButton("💳 Sayt", url=WITHDRAW_SITE_URL)],
+        [InlineKeyboardButton("💳 Saytga o‘tish", url=WITHDRAW_SITE_URL)],
         [InlineKeyboardButton("◀️ Bosh menyu", callback_data="main_menu")]
     ]
-    await query.message.reply_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+    await query.message.reply_text(
+        text,
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
 
 # ------------------- ADMIN BUYRUQLARI -------------------
 # /newapk - APK yuklash
@@ -476,7 +526,6 @@ def main():
     # Callback handlerlar
     app.add_handler(CallbackQueryHandler(show_games, pattern="^show_games$"))
     app.add_handler(CallbackQueryHandler(show_apk, pattern="^show_apk$"))
-    app.add_handler(CallbackQueryHandler(download_apk, pattern="^download_apk$"))
     app.add_handler(CallbackQueryHandler(game_callback, pattern="^game_"))
     app.add_handler(CallbackQueryHandler(earn_callback, pattern="^earn$"))
     app.add_handler(CallbackQueryHandler(balance_callback, pattern="^balance$"))
