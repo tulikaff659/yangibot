@@ -234,7 +234,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         "🎰 *BetWinner Bukmekeriga xush kelibsiz!* 🎰\n\n"
         "🔥 *Premium bonuslar* va har hafta yangi yutuqlar sizni kutmoqda!\n"
-        "📊 *O‘yinlar uchun maxsus chuqur taxlillar.\n\n"
         "📢 *BetWinner kun kuponlari* va eng so‘nggi aksiyalar haqida tezkor xabarlar!\n"
         "✅ Kunlik stavkalar, ekspress kuponlar va bonus imkoniyatlaridan birinchi bo‘lib xabardor bo‘ling.\n\n"
         "💰 Bu yerda nafaqat o‘ynab, balki *pul ishlashingiz* mumkin:\n"
