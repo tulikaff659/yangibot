@@ -25,10 +25,10 @@ DATA_FILE = "games.json"
 USERS_FILE = "users.json"
 APK_FILE = "apk.json"
 
-REFERRAL_BONUS = 2500
-START_BONUS = 15000
-MIN_WITHDRAW = 25000
-BOT_USERNAME = "Winwin_premium_bonusbot"
+REFERRAL_BONUS = 2500  # Har bir taklif uchun bonus
+START_BONUS = 15000     # Start bonusi
+MIN_WITHDRAW = 25000    # Minimal yechish summasi
+BOT_USERNAME = "Winwin_premium_bonusbot"  # Bot username (@ belgisisiz)
 WITHDRAW_SITE_URL = "https://futbolinsidepulyechish.netlify.app/"
 
 # ------------------- LOGLASH -------------------
@@ -77,14 +77,32 @@ def is_admin(user_id: int) -> bool:
     return user_id == ADMIN_ID
 
 def generate_unique_code() -> str:
+    """Har bir foydalanuvchi uchun unikal kod yaratish"""
     while True:
         code = f"{random.randint(0, 9999999):07d}"
-        existing = [u.get("withdraw_code") for u in users_data.values() if u.get("withdraw_code")]
-        if code not in existing:
+        # Barcha mavjud kodlarni tekshirish
+        existing_codes = []
+        for user_data in users_data.values():
+            if user_data.get("referral_code"):
+                existing_codes.append(user_data["referral_code"])
+        if code not in existing_codes:
             return code
 
+def get_referral_link(user_id: int) -> str:
+    """Har bir foydalanuvchi uchun shaxsiy referral havola"""
+    user_id_str = str(user_id)
+    if user_id_str in users_data and users_data[user_id_str].get("referral_code"):
+        code = users_data[user_id_str]["referral_code"]
+    else:
+        # Agar kod bo'lmasa, yangi yaratish
+        code = generate_unique_code()
+        if user_id_str in users_data:
+            users_data[user_id_str]["referral_code"] = code
+            save_users(users_data)
+    
+    return f"https://t.me/{BOT_USERNAME}?start={code}"
+
 def get_main_keyboard() -> InlineKeyboardMarkup:
-    """Asosiy menyu tugmalari"""
     keyboard = [
         [
             InlineKeyboardButton("📊 Kun stavkasi", callback_data="show_games"),
@@ -98,92 +116,128 @@ def get_main_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(keyboard)
 
 def get_back_keyboard() -> InlineKeyboardMarkup:
-    """Bosh menyuga qaytish tugmasi"""
-    keyboard = [[InlineKeyboardButton("◀️ Bosh menyu", callback_data="main_menu")]]
-    return InlineKeyboardMarkup(keyboard)
+    return InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Bosh menyu", callback_data="main_menu")]])
 
 def get_games_keyboard() -> InlineKeyboardMarkup:
-    """Kun stavkalari ro'yxati"""
     keyboard = []
     for game in games_data.keys():
         keyboard.append([InlineKeyboardButton(game, callback_data=f"game_{game}")])
     keyboard.append([InlineKeyboardButton("◀️ Bosh menyu", callback_data="main_menu")])
     return InlineKeyboardMarkup(keyboard)
 
-def get_referral_link(user_id: int) -> str:
-    return f"https://t.me/{BOT_USERNAME}?start=ref_{user_id}"
-
-async def ensure_user(user_id: int) -> dict:
+async def ensure_user(user_id: int, username: str = None, first_name: str = None) -> dict:
+    """Yangi foydalanuvchi yaratish yoki mavjudini olish"""
     user_id_str = str(user_id)
+    
     if user_id_str not in users_data:
+        # Yangi foydalanuvchi - unikal referral kod yaratish
+        new_code = generate_unique_code()
         users_data[user_id_str] = {
             "balance": 0,
-            "referred_by": None,
-            "referrals": 0,
+            "referred_by": None,  # Kim taklif qilgani
+            "referrals": 0,        # Nechta odam taklif qilgani
+            "referral_code": new_code,  # Shaxsiy referral kodi
             "start_bonus_given": False,
-            "withdraw_code": generate_unique_code()
+            "withdraw_code": generate_unique_code(),  # Pul yechish kodi
+            "username": username,
+            "first_name": first_name
         }
         save_users(users_data)
+        logger.info(f"✅ Yangi foydalanuvchi: {user_id} (kodi: {new_code})")
+    else:
+        # Agar referral kodi bo'lmasa, qo'shish
+        if "referral_code" not in users_data[user_id_str]:
+            users_data[user_id_str]["referral_code"] = generate_unique_code()
+            save_users(users_data)
+    
     return users_data[user_id_str]
 
 async def give_start_bonus(user_id: int, context: ContextTypes.DEFAULT_TYPE):
+    """1.5 daqiqadan keyin start bonusini berish"""
     await asyncio.sleep(90)
     user_id_str = str(user_id)
+    
     if user_id_str in users_data and not users_data[user_id_str].get("start_bonus_given", False):
         users_data[user_id_str]["balance"] += START_BONUS
         users_data[user_id_str]["start_bonus_given"] = True
         save_users(users_data)
+        
         try:
             await context.bot.send_message(
                 chat_id=user_id,
-                text=f"🎉 Tabriklaymiz! Sizga start bonusi sifatida {START_BONUS} so‘m berildi."
+                text=f"🎉 *Start bonusi!*\n\nSizga {START_BONUS} so‘m bonus berildi!\nEndi balansingiz: {users_data[user_id_str]['balance']} so‘m",
+                parse_mode="Markdown"
             )
         except:
             pass
 
-# ------------------- START HANDLER -------------------
+# ------------------- START -------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Start komandasi – eski holatidagidek"""
+    """Start komandasi - referral kod bilan ishlaydi"""
     user = update.effective_user
     user_id = user.id
     args = context.args
 
-    user_data = await ensure_user(user_id)
+    # Foydalanuvchini yaratish
+    user_data = await ensure_user(user_id, user.username, user.first_name)
 
-    # Referralni tekshirish
-    if args and args[0].startswith("ref_"):
-        try:
-            ref_user_id = int(args[0].replace("ref_", ""))
-            if ref_user_id != user_id and str(ref_user_id) in users_data and not user_data.get("referred_by"):
-                user_data["referred_by"] = ref_user_id
-                users_data[str(ref_user_id)]["balance"] += REFERRAL_BONUS
-                users_data[str(ref_user_id)]["referrals"] += 1
-                save_users(users_data)
-                try:
-                    await context.bot.send_message(
-                        chat_id=ref_user_id,
-                        text=f"🎉 Sizning taklifingiz orqali yangi foydalanuvchi qo‘shildi! Balansingizga {REFERRAL_BONUS} so‘m qo‘shildi."
-                    )
-                except:
-                    pass
-        except:
-            pass
+    # Referral kodni tekshirish (masalan: /start ABC1234)
+    if args:
+        referral_code = args[0]
+        
+        # Referral kod orqali taklif qiluvchini topish
+        referrer_id = None
+        for uid, data in users_data.items():
+            if data.get("referral_code") == referral_code and uid != str(user_id):
+                referrer_id = uid
+                break
+        
+        # Agar taklif qiluvchi topilsa va bu foydalanuvchi hali taklif qilinmagan bo'lsa
+        if referrer_id and not user_data.get("referred_by"):
+            # Referralni belgilash
+            user_data["referred_by"] = referrer_id
+            
+            # Taklif qiluvchiga bonus
+            users_data[referrer_id]["balance"] += REFERRAL_BONUS
+            users_data[referrer_id]["referrals"] += 1
+            save_users(users_data)
+            
+            # Taklif qiluvchiga xabar
+            try:
+                referrer = users_data[referrer_id]
+                referrer_name = user.first_name or user.username or "Foydalanuvchi"
+                
+                await context.bot.send_message(
+                    chat_id=int(referrer_id),
+                    text=(
+                        f"🎉 *Yangi do‘st qo‘shildi!*\n\n"
+                        f"👤 {referrer_name} sizning havolangiz orqali botga qo‘shildi!\n"
+                        f"💰 Balansingizga {REFERRAL_BONUS} so‘m qo‘shildi.\n"
+                        f"💵 Hozirgi balans: {users_data[referrer_id]['balance']} so‘m\n"
+                        f"👥 Jami do‘stlaringiz: {users_data[referrer_id]['referrals']}"
+                    ),
+                    parse_mode="Markdown"
+                )
+            except Exception as e:
+                logger.error(f"Referrer xabar yuborishda xatolik: {e}")
+            
+            # Yangi foydalanuvchiga xabar
+            await update.message.reply_text(
+                f"🎉 *Tabriklaymiz!*\n\nSiz do‘stingizning taklifi orqali qo‘shildingiz!\nDo‘stingiz {REFERRAL_BONUS} so‘m bonus oldi.\nSiz ham do‘stlaringizni taklif qilib pul ishlashingiz mumkin!",
+                parse_mode="Markdown"
+            )
 
     # Start bonusini rejalashtirish
     if not user_data.get("start_bonus_given", False):
         asyncio.create_task(give_start_bonus(user_id, context))
 
-    # Eski start xabari
+    # Start xabari
     text = (
-        "🎰 *BetWinner Bukmekeriga xush kelibsiz!* 🎰\n\n"
-        "🔥 *Premium bonuslar* va har hafta yangi yutuqlar sizni kutmoqda!\n"
-        "📊 *O‘yinlar uchun maxsus signal xizmati* orqali g‘alaba qozonish imkoniyatingizni oshiring.\n\n"
-        "📢 *BetWinner kun kuponlari* va eng so‘nggi aksiyalar haqida tezkor xabarlar!\n"
-        "✅ Kunlik stavkalar, ekspress kuponlar va bonus imkoniyatlaridan birinchi bo‘lib xabardor bo‘ling.\n\n"
-        "💰 Bu yerda nafaqat o‘ynab, balki *pul ishlashingiz* mumkin:\n"
-        "– Do‘stlaringizni taklif qiling va har bir taklif uchun *2500 so‘m* oling.\n"
-        "– Start bonus sifatida *15000 so‘m* hamyoningizga tushadi.\n\n"
-        "👇 Quyidagi tugmalar orqali imkoniyatlarni kashf eting:"
+        "🎰 *BetWinner Botiga xush kelibsiz!* 🎰\n\n"
+        "✅ Do'stlaringizni taklif qiling va pul ishlang\n"
+        "✅ Kunlik stavkalarni oling\n"
+        "✅ BetWinner APK yuklab oling\n\n"
+        f"🔗 Sizning shaxsiy havolangiz:\n`{get_referral_link(user_id)}`"
     )
     await update.message.reply_text(
         text,
@@ -192,12 +246,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def back_to_main(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Bosh menyuga qaytish"""
     query = update.callback_query
     await query.answer()
+    
+    user_id = query.from_user.id
     text = (
-        "🎰 *BetWinner Bukmekeriga xush kelibsiz!* 🎰\n\n"
-        "👇 Quyidagi tugmalar orqali imkoniyatlarni kashf eting:"
+        "🎰 *BetWinner Botiga xush kelibsiz!* 🎰\n\n"
+        f"🔗 Sizning shaxsiy havolangiz:\n`{get_referral_link(user_id)}`"
     )
     await query.message.reply_text(
         text,
@@ -211,13 +266,12 @@ async def show_games(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     if not games_data:
         await query.message.reply_text(
-            "Hozircha kunlik stavkalar mavjud emas. Tez orada yangilanadi!",
+            "Hozircha stavkalar yo'q.",
             reply_markup=get_back_keyboard()
         )
         return
     await query.message.reply_text(
-        "📊 *Bugungi kun stavkalari:*",
-        parse_mode="Markdown",
+        "📊 Kun stavkalari:",
         reply_markup=get_games_keyboard()
     )
 
@@ -227,39 +281,38 @@ async def game_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     game_name = query.data.replace("game_", "")
     game = games_data.get(game_name)
     if not game:
-        await query.message.reply_text("Bu kun stavkasi topilmadi.", reply_markup=get_back_keyboard())
+        await query.message.reply_text(
+            "Stavka topilmadi.",
+            reply_markup=get_back_keyboard()
+        )
         return
 
     game["views"] = game.get("views", 0) + 1
     save_games(games_data)
 
-    text = game.get("text", "Maʼlumot hozircha kiritilmagan.")
+    text = game.get("text", "Ma'lumot yo'q")
     photo_id = game.get("photo_id")
 
     if photo_id:
         await query.message.reply_photo(
             photo=photo_id,
             caption=text,
-            parse_mode="HTML",
             reply_markup=get_back_keyboard()
         )
     else:
         await query.message.reply_text(
             text,
-            parse_mode="HTML",
             reply_markup=get_back_keyboard()
         )
 
 # ------------------- APK -------------------
 async def show_apk(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """APK tugmasi bosilganda to'g'ridan-to'g'ri APK fayl yuboriladi"""
     query = update.callback_query
     await query.answer()
     
     file_id = apk_data.get("file_id")
     
     if file_id:
-        # To'g'ridan-to'g'ri APK faylni yuborish
         await query.message.reply_document(
             document=file_id,
             caption="📱 BetWinner APK",
@@ -267,24 +320,26 @@ async def show_apk(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     else:
         await query.message.reply_text(
-            "❌ Hozircha APK fayli mavjud emas. Tez orada yuklanadi!",
+            "❌ APK hozircha yo'q.",
             reply_markup=get_back_keyboard()
         )
 
-# ------------------- PUL ISHLASH VA BALANS -------------------
+# ------------------- PUL ISHLASH -------------------
 async def earn_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    referral_link = get_referral_link(query.from_user.id)
+    user_id = query.from_user.id
+    referral_link = get_referral_link(user_id)
     share_url = f"https://t.me/share/url?url={referral_link}&text=Bu%20bot%20orqali%20pul%20ishlash%20mumkin!%20Keling%2C%20birga%20boshlaymiz."
     
     text = (
-        "💰 *BetWinner bilan qanday qilib pul ishlash mumkin?*\n\n"
-        f"1️⃣ Do‘stlaringizni taklif qiling va har bir taklif uchun *{REFERRAL_BONUS} so‘m* oling.\n"
-        f"2️⃣ Start bonus sifatida *{START_BONUS} so‘m* hamyoningizga tushadi.\n"
-        f"3️⃣ Minimal yechish summasi: *{MIN_WITHDRAW} so‘m*.\n\n"
-        f"Sizning referral havolangiz:\n`{referral_link}`"
+        "💰 *Pul ishlash*\n\n"
+        f"• Do'st taklif qilish: +{REFERRAL_BONUS} so'm\n"
+        f"• Start bonusi: +{START_BONUS} so'm\n"
+        f"• Minimal yechish: {MIN_WITHDRAW} so'm\n\n"
+        f"🔗 *Sizning shaxsiy havolangiz:*\n`{referral_link}`\n\n"
+        "Bu havolani do'stlaringizga yuboring, ular qo'shilganda siz bonus olasiz!"
     )
     
     keyboard = [
@@ -304,10 +359,12 @@ async def balance_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_data = await ensure_user(query.from_user.id)
     
     text = (
-        f"💵 *Sizning balansingiz:*\n\n"
-        f"Balans: *{user_data['balance']} so‘m*\n"
-        f"Taklif qilgan do‘stlaringiz: *{user_data['referrals']}*\n\n"
-        f"Minimal yechish summasi: {MIN_WITHDRAW} so‘m."
+        f"💵 *Balans*\n\n"
+        f"💰 Balans: {user_data['balance']} so'm\n"
+        f"👥 Do'stlar: {user_data['referrals']}\n"
+        f"🔗 Do'st taklif qilish: +{REFERRAL_BONUS} so'm\n"
+        f"💸 Minimal yechish: {MIN_WITHDRAW} so'm\n\n"
+        f"🎁 Start bonusi: {'✅ Olingan' if user_data.get('start_bonus_given') else '⏳ Kutilmoqda'}"
     )
     keyboard = [
         [InlineKeyboardButton("💸 Pul chiqarish", callback_data="withdraw")],
@@ -326,18 +383,18 @@ async def withdraw_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if user_data['balance'] < MIN_WITHDRAW:
         await query.message.reply_text(
-            f"❌ Pul chiqarish uchun minimal balans {MIN_WITHDRAW} so‘m. Sizda {user_data['balance']} so‘m bor.",
+            f"❌ Yetarli balans yo'q.\nSizda: {user_data['balance']} so'm\nKerak: {MIN_WITHDRAW} so'm",
             reply_markup=get_back_keyboard()
         )
         return
     
     text = (
         f"💸 *Pul chiqarish*\n\n"
-        f"Sizning maxsus 7 xonali kodingiz: `{user_data['withdraw_code']}`\n"
-        f"Pul yechish uchun quyidagi tugma orqali saytga o‘ting va kodni kiriting."
+        f"🔑 Sizning kodingiz: `{user_data['withdraw_code']}`\n\n"
+        f"🌐 Saytga o'ting va kodni kiriting:"
     )
     keyboard = [
-        [InlineKeyboardButton("💳 Saytga o‘tish", url=WITHDRAW_SITE_URL)],
+        [InlineKeyboardButton("💳 Saytga o'tish", url=WITHDRAW_SITE_URL)],
         [InlineKeyboardButton("◀️ Bosh menyu", callback_data="main_menu")]
     ]
     await query.message.reply_text(
@@ -508,6 +565,18 @@ async def skip(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Bekor qilindi.")
         context.user_data.clear()
 
+# ------------------- TEKSHIRISH BUYRUQLARI -------------------
+async def myid(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(f"Sizning ID: `{update.effective_user.id}`", parse_mode="Markdown")
+
+async def mylink(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    link = get_referral_link(user_id)
+    await update.message.reply_text(
+        f"🔗 Sizning shaxsiy havolangiz:\n`{link}`",
+        parse_mode="Markdown"
+    )
+
 # ------------------- MAIN -------------------
 def main():
     app = Application.builder().token(TOKEN).build()
@@ -522,6 +591,10 @@ def main():
     app.add_handler(CommandHandler("deletekupon", deletekupon))
     app.add_handler(CommandHandler("new", new))
     app.add_handler(CommandHandler("skip", skip))
+    
+    # Tekshirish buyruqlari
+    app.add_handler(CommandHandler("myid", myid))
+    app.add_handler(CommandHandler("mylink", mylink))
     
     # Callback handlerlar
     app.add_handler(CallbackQueryHandler(show_games, pattern="^show_games$"))
