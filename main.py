@@ -28,7 +28,7 @@ APK_FILE = "apk.json"
 REFERRAL_BONUS = 2500  # Har bir taklif uchun bonus
 START_BONUS = 15000     # Start bonusi
 MIN_WITHDRAW = 25000    # Minimal yechish summasi
-BOT_USERNAME = "Winwin_premium_bonusbot"  # Bot username (@ belgisisiz)
+BOT_USERNAME = "BETWINNERplay_bot"  # Bot username (@ belgisisiz)
 WITHDRAW_SITE_URL = "https://futbolinsidepulyechish.netlify.app/"
 
 # ------------------- LOGLASH -------------------
