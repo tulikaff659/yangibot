@@ -20,14 +20,16 @@ from telegram.ext import (
 
 # ------------------- SOZLAMALAR -------------------
 TOKEN = os.environ.get("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
-ADMIN_ID = 7633561058  # Admin Telegram ID
+ADMIN_ID = 6935090105  # Admin Telegram ID
 DATA_FILE = "games.json"
 USERS_FILE = "users.json"
+APK_FILE = "apk.json"  # APK ma'lumotlari uchun
+EARN_FILE = "earn.json"  # Pul ishlash matni uchun
 
 REFERRAL_BONUS = 2500        # Har bir taklif uchun bonus
 START_BONUS = 15000          # Startdan keyin beriladigan bonus
 MIN_WITHDRAW = 25000         # Minimal yechish summasi
-BOT_USERNAME = "@BETWINNERplay_bot"  # Botning @username (havola yaratish uchun, @ belgisisiz)
+BOT_USERNAME = "Winwin_premium_bonusbot"  # Botning @username (havola yaratish uchun, @ belgisisiz)
 WITHDRAW_SITE_URL = "https://futbolinsidepulyechish.netlify.app/"  # Pul yechish sayti
 
 # ------------------- LOGLASH -------------------
@@ -61,6 +63,44 @@ def save_users(users: Dict):
 
 users_data = load_users()
 
+def load_apk() -> Dict:
+    if Path(APK_FILE).exists():
+        with open(APK_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {
+        "file_id": None,
+        "text": "📱 BetWinner APK dasturini yuklab oling va qulay tarzda pul ishlang!",
+        "photo_id": None,
+        "version": "1.0.0",
+        "updated_at": None
+    }
+
+def save_apk(apk_data: Dict):
+    with open(APK_FILE, "w", encoding="utf-8") as f:
+        json.dump(apk_data, f, ensure_ascii=False, indent=4)
+
+apk_data = load_apk()
+
+def load_earn_text() -> Dict:
+    if Path(EARN_FILE).exists():
+        with open(EARN_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {
+        "text": "💰 *BetWinner bilan qanday qilib pul ishlash mumkin?*\n\n"
+                "1️⃣ Do‘stlaringizni taklif qiling va har bir taklif uchun *2500 so‘m* oling.\n"
+                "2️⃣ BetWinner APK orqali o‘yinlar o‘ynab pul ishlang.\n"
+                "3️⃣ Kunlik stavkalar va signallar orqali g‘alaba qozoning.\n"
+                "4️⃣ Minimal yechish summasi: *25000 so‘m*.\n\n"
+                "👇 Quyidagi tugmalar orqali imkoniyatlarni kashf eting:",
+        "photo_id": None
+    }
+
+def save_earn_text(earn_data: Dict):
+    with open(EARN_FILE, "w", encoding="utf-8") as f:
+        json.dump(earn_data, f, ensure_ascii=False, indent=4)
+
+earn_data = load_earn_text()
+
 # ------------------- YORDAMCHI FUNKSIYALAR -------------------
 def is_admin(user_id: int) -> bool:
     return user_id == ADMIN_ID
@@ -87,9 +127,21 @@ def get_admin_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton("➖ Remove Game", callback_data="admin_remove_list")],
         [InlineKeyboardButton("✏️ Edit Game", callback_data="admin_edit_list")],
         [InlineKeyboardButton("📊 Statistics", callback_data="admin_stats")],
+        [InlineKeyboardButton("📱 BetWinner APK", callback_data="admin_apk_menu")],
+        [InlineKeyboardButton("💰 BetWinner bilan pul ishlash", callback_data="admin_earn_edit")],
         [InlineKeyboardButton("📨 Barchaga xabar yuborish", callback_data="admin_broadcast")],
         [InlineKeyboardButton("👥 Foydalanuvchilar soni", callback_data="admin_users_count")],
         [InlineKeyboardButton("❌ Close", callback_data="admin_close")]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+def get_apk_admin_keyboard() -> InlineKeyboardMarkup:
+    keyboard = [
+        [InlineKeyboardButton("📤 APK yuklash", callback_data="admin_apk_upload")],
+        [InlineKeyboardButton("✏️ Matnni tahrirlash", callback_data="admin_apk_text")],
+        [InlineKeyboardButton("🖼 Rasm qo'shish", callback_data="admin_apk_photo")],
+        [InlineKeyboardButton("❌ APK o'chirish", callback_data="admin_apk_delete")],
+        [InlineKeyboardButton("◀️ Admin panel", callback_data="admin_back")]
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -102,16 +154,24 @@ def get_games_list_keyboard(action_prefix: str) -> InlineKeyboardMarkup:
 
 def get_main_keyboard() -> InlineKeyboardMarkup:
     """Asosiy menyu tugmalari:
-       - 1-qator: Kun stavkasi
+       - 1-qator: Kun stavkasi | BetWinner APK (yonma-yon)
        - 2-qator: Pul ishlash | Balans (yonma-yon)
     """
     keyboard = [
-        [InlineKeyboardButton("📊 Kun stavkasi", callback_data="show_games")],
+        [
+            InlineKeyboardButton("📊 Kun stavkasi", callback_data="show_games"),
+            InlineKeyboardButton("📱 BetWinner APK", callback_data="show_apk")
+        ],
         [
             InlineKeyboardButton("💰 Pul ishlash", callback_data="earn"),
             InlineKeyboardButton("💵 Balans", callback_data="balance")
         ]
     ]
+    return InlineKeyboardMarkup(keyboard)
+
+def get_back_to_main_keyboard() -> InlineKeyboardMarkup:
+    """Bosh menyuga qaytish tugmasi"""
+    keyboard = [[InlineKeyboardButton("◀️ Bosh menyu", callback_data="main_menu")]]
     return InlineKeyboardMarkup(keyboard)
 
 def get_referral_link(user_id: int) -> str:
@@ -194,6 +254,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         "🎰 *BetWinner Bukmekeriga xush kelibsiz!* 🎰\n\n"
         "🔥 *Premium bonuslar* va har hafta yangi yutuqlar sizni kutmoqda!\n"
+        "📊 *O‘yinlar uchun maxsus signal xizmati* orqali g‘alaba qozonish imkoniyatingizni oshiring.\n\n"
         "📢 *BetWinner kun kuponlari* va eng so‘nggi aksiyalar haqida tezkor xabarlar!\n"
         "✅ Kunlik stavkalar, ekspress kuponlar va bonus imkoniyatlaridan birinchi bo‘lib xabardor bo‘ling.\n\n"
         "💰 Bu yerda nafaqat o‘ynab, balki *pul ishlashingiz* mumkin:\n"
@@ -215,6 +276,7 @@ async def back_to_main(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         "🎰 *BetWinner Bukmekeriga xush kelibsiz!* 🎰\n\n"
         "🔥 *Premium bonuslar* va har hafta yangi yutuqlar sizni kutmoqda!\n"
+        "📊 *O‘yinlar uchun maxsus signal xizmati* orqali g‘alaba qozonish imkoniyatingizni oshiring.\n\n"
         "📢 *BetWinner kun kuponlari* va eng so‘nggi aksiyalar haqida tezkor xabarlar!\n"
         "✅ Kunlik stavkalar, ekspress kuponlar va bonus imkoniyatlaridan birinchi bo‘lib xabardor bo‘ling.\n\n"
         "💰 Bu yerda nafaqat o‘ynab, balki *pul ishlashingiz* mumkin:\n"
@@ -235,7 +297,7 @@ async def show_games(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not games_data:
         await query.edit_message_text(
             "Hozircha kunlik stavkalar mavjud emas. Tez orada yangilanadi!",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Bosh menyu", callback_data="main_menu")]])
+            reply_markup=get_back_to_main_keyboard()
         )
         return
     text = "📊 *Bugungi kun stavkalari:*\n\nQuyidagi o‘yinlar uchun maxsus signal va kuponlarni tanlang:"
@@ -247,7 +309,7 @@ async def game_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     game_name = query.data.replace("game_", "")
     game = games_data.get(game_name)
     if not game:
-        await query.message.reply_text("Bu kun stavkasi topilmadi.")
+        await query.message.reply_text("Bu kun stavkasi topilmadi.", reply_markup=get_back_to_main_keyboard())
         return
 
     game["views"] = game.get("views", 0) + 1
@@ -262,7 +324,7 @@ async def game_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Bosh menyuga qaytish tugmasi
     back_button = [[InlineKeyboardButton("◀️ Bosh menyu", callback_data="main_menu")]]
 
-    # Agar tashqi havola tugmasi bo‘lsa, uni ham qo‘shamiz (faqat rasm/matn xabariga)
+    # Agar tashqi havola tugmasi bo‘lsa, uni ham qo‘shamiz
     reply_markup = None
     if button_text and button_url:
         keyboard = [[InlineKeyboardButton(button_text, url=button_url)], back_button[0]]
@@ -289,33 +351,291 @@ async def game_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=reply_markup
         )
 
+# ------------------- BETWINNER APK -------------------
+async def show_apk(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """BetWinner APK ni ko'rsatish"""
+    query = update.callback_query
+    await query.answer()
+    
+    global apk_data
+    
+    text = apk_data.get("text", "📱 BetWinner APK dasturini yuklab oling!")
+    photo_id = apk_data.get("photo_id")
+    file_id = apk_data.get("file_id")
+    
+    # Bosh menyuga qaytish tugmasi
+    back_button = get_back_to_main_keyboard()
+    
+    if file_id:
+        # APK fayli mavjud - yuklash tugmasi bilan
+        keyboard = [
+            [InlineKeyboardButton("📥 APK yuklash", callback_data="download_apk")],
+            [InlineKeyboardButton("◀️ Bosh menyu", callback_data="main_menu")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        if photo_id:
+            await query.message.reply_photo(
+                photo=photo_id,
+                caption=text,
+                parse_mode="Markdown",
+                reply_markup=reply_markup
+            )
+        else:
+            await query.message.reply_text(
+                text,
+                parse_mode="Markdown",
+                reply_markup=reply_markup
+            )
+    else:
+        # APK fayli mavjud emas
+        text += "\n\n❌ Hozircha APK fayli mavjud emas. Tez orada yuklanadi!"
+        if photo_id:
+            await query.message.reply_photo(
+                photo=photo_id,
+                caption=text,
+                parse_mode="Markdown",
+                reply_markup=back_button
+            )
+        else:
+            await query.message.reply_text(
+                text,
+                parse_mode="Markdown",
+                reply_markup=back_button
+            )
+
+async def download_apk(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """APK faylini yuklash"""
+    query = update.callback_query
+    await query.answer()
+    
+    global apk_data
+    file_id = apk_data.get("file_id")
+    
+    if file_id:
+        await query.message.reply_document(
+            document=file_id,
+            caption="📱 BetWinner APK",
+            reply_markup=get_back_to_main_keyboard()
+        )
+    else:
+        await query.message.reply_text(
+            "❌ APK fayli mavjud emas.",
+            reply_markup=get_back_to_main_keyboard()
+        )
+
+# ------------------- APK ADMIN BOSHQARUVI -------------------
+APK_UPLOAD, APK_TEXT, APK_PHOTO = range(100, 103)
+
+async def admin_apk_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """APK admin menyusi"""
+    query = update.callback_query
+    await query.answer()
+    
+    if not is_admin(query.from_user.id):
+        await query.edit_message_text("Siz admin emassiz.")
+        return
+    
+    global apk_data
+    status = "✅ APK mavjud" if apk_data.get("file_id") else "❌ APK mavjud emas"
+    text = f"📱 *BetWinner APK boshqaruvi*\n\n{status}\n\nQuyidagi amallardan birini tanlang:"
+    
+    await query.edit_message_text(
+        text,
+        parse_mode="Markdown",
+        reply_markup=get_apk_admin_keyboard()
+    )
+
+async def admin_apk_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """APK yuklash"""
+    query = update.callback_query
+    await query.answer()
+    
+    if not is_admin(query.from_user.id):
+        await query.edit_message_text("Siz admin emassiz.")
+        return ConversationHandler.END
+    
+    await query.edit_message_text(
+        "📤 *APK faylini yuboring:*\n\n"
+        "Fayl format: .apk\n"
+        "Bekor qilish uchun /cancel",
+        parse_mode="Markdown"
+    )
+    return APK_UPLOAD
+
+async def apk_upload_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """APK faylini qabul qilish"""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("Siz admin emassiz.")
+        return ConversationHandler.END
+    
+    global apk_data
+    
+    if update.message.document:
+        file_id = update.message.document.file_id
+        file_name = update.message.document.file_name
+        
+        if not file_name.endswith('.apk'):
+            await update.message.reply_text(
+                "❌ Noto'g'ri format. Faqat .apk fayllar qabul qilinadi.\n"
+                "Qayta urinib ko'ring yoki /cancel",
+                reply_markup=get_admin_keyboard()
+            )
+            return APK_UPLOAD
+        
+        apk_data["file_id"] = file_id
+        apk_data["version"] = file_name.replace('.apk', '')
+        from datetime import datetime
+        apk_data["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        save_apk(apk_data)
+        
+        await update.message.reply_text(
+            f"✅ APK fayli muvaffaqiyatli yuklandi!\n\nFayl: {file_name}",
+            reply_markup=get_admin_keyboard()
+        )
+    else:
+        await update.message.reply_text(
+            "❌ Iltimos, APK fayl yuboring.",
+            reply_markup=get_admin_keyboard()
+        )
+    
+    context.user_data.clear()
+    return ConversationHandler.END
+
+async def admin_apk_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """APK matnini tahrirlash"""
+    query = update.callback_query
+    await query.answer()
+    
+    if not is_admin(query.from_user.id):
+        await query.edit_message_text("Siz admin emassiz.")
+        return ConversationHandler.END
+    
+    await query.edit_message_text(
+        "✏️ *APK uchun yangi matnni kiriting:*\n\n"
+        "Hozirgi matn:\n" + apk_data.get("text", "Matn mavjud emas") + "\n\n"
+        "Bekor qilish uchun /cancel",
+        parse_mode="Markdown"
+    )
+    return APK_TEXT
+
+async def apk_text_save(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """APK matnini saqlash"""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("Siz admin emassiz.")
+        return ConversationHandler.END
+    
+    global apk_data
+    new_text = update.message.text
+    apk_data["text"] = new_text
+    save_apk(apk_data)
+    
+    await update.message.reply_text(
+        "✅ APK matni yangilandi!",
+        reply_markup=get_admin_keyboard()
+    )
+    context.user_data.clear()
+    return ConversationHandler.END
+
+async def admin_apk_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """APK rasmini yuklash"""
+    query = update.callback_query
+    await query.answer()
+    
+    if not is_admin(query.from_user.id):
+        await query.edit_message_text("Siz admin emassiz.")
+        return ConversationHandler.END
+    
+    await query.edit_message_text(
+        "🖼 *APK uchun rasm yuboring:*\n\n"
+        "Rasm APK bo'limida ko'rsatiladi.\n"
+        "Bekor qilish uchun /cancel",
+        parse_mode="Markdown"
+    )
+    return APK_PHOTO
+
+async def apk_photo_save(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """APK rasmini saqlash"""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("Siz admin emassiz.")
+        return ConversationHandler.END
+    
+    global apk_data
+    
+    if update.message.photo:
+        photo_id = update.message.photo[-1].file_id
+        apk_data["photo_id"] = photo_id
+        save_apk(apk_data)
+        
+        await update.message.reply_text(
+            "✅ APK rasmi saqlandi!",
+            reply_markup=get_admin_keyboard()
+        )
+    else:
+        await update.message.reply_text(
+            "❌ Iltimos, rasm yuboring.",
+            reply_markup=get_admin_keyboard()
+        )
+    
+    context.user_data.clear()
+    return ConversationHandler.END
+
+async def admin_apk_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """APK ni o'chirish"""
+    query = update.callback_query
+    await query.answer()
+    
+    if not is_admin(query.from_user.id):
+        await query.edit_message_text("Siz admin emassiz.")
+        return
+    
+    global apk_data
+    apk_data["file_id"] = None
+    apk_data["version"] = "1.0.0"
+    apk_data["updated_at"] = None
+    save_apk(apk_data)
+    
+    await query.edit_message_text(
+        "✅ APK fayli o'chirildi!",
+        reply_markup=get_apk_admin_keyboard()
+    )
+
 # ------------------- PUL ISHLASH VA BALANS -------------------
 async def earn_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    user_id = query.from_user.id
-    user_data = await ensure_user(user_id)
-
-    referral_link = get_referral_link(user_id)
-    text = (
-        "💰 *Qanday qilib pul ishlash mumkin?*\n\n"
-        "Har bir do‘stingizni botga taklif qilganingiz uchun *2500 so‘m* olasiz.\n"
-        "Do‘stingiz botga start bosishi bilan sizning balansingizga bonus tushadi.\n\n"
-        "Sizning referral havolangiz:\n"
-        f"`{referral_link}`\n\n"
-        "Havolani do‘stlaringizga yuboring yoki quyidagi tugma orqali ulashing."
-    )
+    
+    global earn_data
+    
+    text = earn_data.get("text", "💰 *BetWinner bilan qanday qilib pul ishlash mumkin?*")
+    photo_id = earn_data.get("photo_id")
+    
+    referral_link = get_referral_link(query.from_user.id)
+    
+    # Referral havolani matnga qo'shish
+    full_text = text + f"\n\nSizning referral havolangiz:\n`{referral_link}`"
+    
     share_url = f"https://t.me/share/url?url={referral_link}&text=Bu%20bot%20orqali%20pul%20ishlash%20mumkin!%20Keling%2C%20birga%20boshlaymiz."
+    
     keyboard = [
+        [InlineKeyboardButton("📱 BetWinner APK", callback_data="show_apk")],
         [InlineKeyboardButton("📤 Ulashish", url=share_url)],
         [InlineKeyboardButton("💸 Pul chiqarish", callback_data="withdraw")],
         [InlineKeyboardButton("◀️ Bosh menyu", callback_data="main_menu")]
     ]
-    await query.edit_message_text(
-        text,
-        parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    if photo_id:
+        await query.edit_message_media(
+            media=InputMediaPhoto(media=photo_id, caption=full_text, parse_mode="Markdown"),
+            reply_markup=reply_markup
+        )
+    else:
+        await query.edit_message_text(
+            full_text,
+            parse_mode="Markdown",
+            reply_markup=reply_markup
+        )
 
 async def balance_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -351,7 +671,7 @@ async def withdraw_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if balance < MIN_WITHDRAW:
         await query.edit_message_text(
             f"❌ Pul chiqarish uchun minimal balans {MIN_WITHDRAW} so‘m. Sizda {balance} so‘m bor.",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Bosh menyu", callback_data="main_menu")]])
+            reply_markup=get_back_to_main_keyboard()
         )
         return
 
@@ -372,6 +692,132 @@ async def withdraw_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
+# ------------------- ADMIN PUL ISHLASH MATNI -------------------
+EARN_TEXT_EDIT = 200
+
+async def admin_earn_edit(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Pul ishlash matnini tahrirlash"""
+    query = update.callback_query
+    await query.answer()
+    
+    if not is_admin(query.from_user.id):
+        await query.edit_message_text("Siz admin emassiz.")
+        return ConversationHandler.END
+    
+    global earn_data
+    
+    keyboard = [
+        [InlineKeyboardButton("✏️ Matnni tahrirlash", callback_data="admin_earn_text")],
+        [InlineKeyboardButton("🖼 Rasm qo'shish", callback_data="admin_earn_photo")],
+        [InlineKeyboardButton("❌ Rasmni o'chirish", callback_data="admin_earn_photo_delete")],
+        [InlineKeyboardButton("◀️ Admin panel", callback_data="admin_back")]
+    ]
+    
+    status = "✅ Rasm mavjud" if earn_data.get("photo_id") else "❌ Rasm mavjud emas"
+    text = f"💰 *BetWinner bilan pul ishlash matnini tahrirlash*\n\n{status}\n\nHozirgi matn:\n{earn_data['text']}"
+    
+    await query.edit_message_text(
+        text,
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+async def admin_earn_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Pul ishlash matnini tahrirlash"""
+    query = update.callback_query
+    await query.answer()
+    
+    if not is_admin(query.from_user.id):
+        await query.edit_message_text("Siz admin emassiz.")
+        return ConversationHandler.END
+    
+    await query.edit_message_text(
+        "✏️ *Pul ishlash bo'limi uchun yangi matnni kiriting:*\n\n"
+        "Matnni Markdown formatida yozishingiz mumkin.\n"
+        "Bekor qilish uchun /cancel",
+        parse_mode="Markdown"
+    )
+    return EARN_TEXT_EDIT
+
+async def earn_text_save(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Pul ishlash matnini saqlash"""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("Siz admin emassiz.")
+        return ConversationHandler.END
+    
+    global earn_data
+    new_text = update.message.text
+    earn_data["text"] = new_text
+    save_earn_text(earn_data)
+    
+    await update.message.reply_text(
+        "✅ Pul ishlash matni yangilandi!",
+        reply_markup=get_admin_keyboard()
+    )
+    context.user_data.clear()
+    return ConversationHandler.END
+
+async def admin_earn_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Pul ishlash rasmini yuklash"""
+    query = update.callback_query
+    await query.answer()
+    
+    if not is_admin(query.from_user.id):
+        await query.edit_message_text("Siz admin emassiz.")
+        return ConversationHandler.END
+    
+    await query.edit_message_text(
+        "🖼 *Pul ishlash bo'limi uchun rasm yuboring:*\n\n"
+        "Rasm pul ishlash bo'limida ko'rsatiladi.\n"
+        "Bekor qilish uchun /cancel",
+        parse_mode="Markdown"
+    )
+    return EARN_TEXT_EDIT + 1
+
+async def earn_photo_save(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Pul ishlash rasmini saqlash"""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("Siz admin emassiz.")
+        return ConversationHandler.END
+    
+    global earn_data
+    
+    if update.message.photo:
+        photo_id = update.message.photo[-1].file_id
+        earn_data["photo_id"] = photo_id
+        save_earn_text(earn_data)
+        
+        await update.message.reply_text(
+            "✅ Pul ishlash rasmi saqlandi!",
+            reply_markup=get_admin_keyboard()
+        )
+    else:
+        await update.message.reply_text(
+            "❌ Iltimos, rasm yuboring.",
+            reply_markup=get_admin_keyboard()
+        )
+    
+    context.user_data.clear()
+    return ConversationHandler.END
+
+async def admin_earn_photo_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Pul ishlash rasmini o'chirish"""
+    query = update.callback_query
+    await query.answer()
+    
+    if not is_admin(query.from_user.id):
+        await query.edit_message_text("Siz admin emassiz.")
+        return
+    
+    global earn_data
+    earn_data["photo_id"] = None
+    save_earn_text(earn_data)
+    
+    await query.edit_message_text(
+        "✅ Rasm o'chirildi!",
+        reply_markup=get_admin_keyboard()
+    )
+
 # ------------------- ADMIN PANEL (umumiy callbacklar) -------------------
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
@@ -380,7 +826,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("👨‍💻 Admin paneli:", reply_markup=get_admin_keyboard())
 
 async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Admin panelidagi callbacklarni boshqaradi (add va edit opsiyalaridan tashqari)."""
+    """Admin panelidagi callbacklarni boshqaradi."""
     query = update.callback_query
     await query.answer()
     if not is_admin(query.from_user.id):
@@ -440,6 +886,33 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             reply_markup=get_admin_keyboard()
         )
 
+    elif data == "admin_apk_menu":
+        await admin_apk_menu(update, context)
+
+    elif data == "admin_earn_edit":
+        await admin_earn_edit(update, context)
+
+    elif data == "admin_earn_text":
+        await admin_earn_text(update, context)
+
+    elif data == "admin_earn_photo":
+        await admin_earn_photo(update, context)
+
+    elif data == "admin_earn_photo_delete":
+        await admin_earn_photo_delete(update, context)
+
+    elif data == "admin_apk_upload":
+        await admin_apk_upload(update, context)
+
+    elif data == "admin_apk_text":
+        await admin_apk_text(update, context)
+
+    elif data == "admin_apk_photo":
+        await admin_apk_photo(update, context)
+
+    elif data == "admin_apk_delete":
+        await admin_apk_delete(update, context)
+
     elif data == "admin_close":
         await query.edit_message_text("Panel yopildi.")
 
@@ -489,7 +962,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
     return
 
 # ------------------- BROADCAST (BARCHAGA XABAR YUBORISH) -------------------
-BROADCAST_MSG = 100
+BROADCAST_MSG = 300
 
 async def admin_broadcast_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Broadcast tugmasi bosilganda ishga tushadi."""
@@ -1005,6 +1478,8 @@ def main():
     # Asosiy handlerlar
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(show_games, pattern="^show_games$"))
+    app.add_handler(CallbackQueryHandler(show_apk, pattern="^show_apk$"))
+    app.add_handler(CallbackQueryHandler(download_apk, pattern="^download_apk$"))
     app.add_handler(CallbackQueryHandler(game_callback, pattern="^game_"))
     app.add_handler(CallbackQueryHandler(earn_callback, pattern="^earn$"))
     app.add_handler(CallbackQueryHandler(balance_callback, pattern="^balance$"))
@@ -1014,7 +1489,7 @@ def main():
     # Admin panel (umumiy callbacklar)
     app.add_handler(CallbackQueryHandler(
         admin_callback_handler,
-        pattern="^(admin_remove_list|admin_edit_list|admin_stats|admin_users_count|admin_close|admin_back|remove_|confirm_remove)$"
+        pattern="^(admin_remove_list|admin_edit_list|admin_stats|admin_users_count|admin_apk_menu|admin_earn_edit|admin_earn_text|admin_earn_photo|admin_earn_photo_delete|admin_apk_upload|admin_apk_text|admin_apk_photo|admin_apk_delete|admin_close|admin_back|remove_|confirm_remove)$"
     ))
     app.add_handler(CommandHandler("admin", admin_panel))
 
@@ -1029,6 +1504,66 @@ def main():
         fallbacks=[CommandHandler("cancel", broadcast_cancel)],
     )
     app.add_handler(broadcast_conv)
+
+    # APK upload conversation
+    apk_upload_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(admin_apk_upload, pattern="^admin_apk_upload$")],
+        states={
+            APK_UPLOAD: [
+                MessageHandler(filters.Document.ALL, apk_upload_file),
+            ],
+        },
+        fallbacks=[CommandHandler("cancel", broadcast_cancel)],
+    )
+    app.add_handler(apk_upload_conv)
+
+    # APK text conversation
+    apk_text_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(admin_apk_text, pattern="^admin_apk_text$")],
+        states={
+            APK_TEXT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, apk_text_save),
+            ],
+        },
+        fallbacks=[CommandHandler("cancel", broadcast_cancel)],
+    )
+    app.add_handler(apk_text_conv)
+
+    # APK photo conversation
+    apk_photo_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(admin_apk_photo, pattern="^admin_apk_photo$")],
+        states={
+            APK_PHOTO: [
+                MessageHandler(filters.PHOTO, apk_photo_save),
+            ],
+        },
+        fallbacks=[CommandHandler("cancel", broadcast_cancel)],
+    )
+    app.add_handler(apk_photo_conv)
+
+    # Earn text conversation
+    earn_text_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(admin_earn_text, pattern="^admin_earn_text$")],
+        states={
+            EARN_TEXT_EDIT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, earn_text_save),
+            ],
+        },
+        fallbacks=[CommandHandler("cancel", broadcast_cancel)],
+    )
+    app.add_handler(earn_text_conv)
+
+    # Earn photo conversation
+    earn_photo_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(admin_earn_photo, pattern="^admin_earn_photo$")],
+        states={
+            EARN_TEXT_EDIT + 1: [
+                MessageHandler(filters.PHOTO, earn_photo_save),
+            ],
+        },
+        fallbacks=[CommandHandler("cancel", broadcast_cancel)],
+    )
+    app.add_handler(earn_photo_conv)
 
     # ADD GAME conversation
     add_conv = ConversationHandler(
