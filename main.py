@@ -135,12 +135,12 @@ def load_apk() -> Dict:
         if doc:
             return {
                 'file_id': doc.get('file_id'),
-                'text': doc.get('text', '📱 BetWinner APK'),
+                'text': doc.get('text', '📱 BetWinner APK dasturini yuklab oling!'),
             }
     if Path(APK_FILE).exists():
         with open(APK_FILE, "r") as f:
             return json.load(f)
-    return {"file_id": None, "text": "📱 BetWinner APK"}
+    return {"file_id": None, "text": "📱 BetWinner APK dasturini yuklab oling!"}
 
 def save_apk(apk_data: Dict):
     if USE_MONGO:
@@ -172,6 +172,7 @@ def generate_unique_code() -> str:
             return code
 
 def get_main_keyboard() -> InlineKeyboardMarkup:
+    """Asosiy menyu tugmalari"""
     keyboard = [
         [
             InlineKeyboardButton("📊 Kun stavkasi", callback_data="show_games"),
@@ -185,20 +186,23 @@ def get_main_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(keyboard)
 
 def get_back_keyboard() -> InlineKeyboardMarkup:
+    """Bosh menyuga qaytish tugmasi"""
     keyboard = [[InlineKeyboardButton("◀️ Bosh menyu", callback_data="main_menu")]]
     return InlineKeyboardMarkup(keyboard)
 
 def get_admin_keyboard() -> InlineKeyboardMarkup:
+    """Admin panel tugmalari"""
     keyboard = [
         [InlineKeyboardButton("➕ Yangi kun stavkasi qo'shish", callback_data="admin_add_game")],
         [InlineKeyboardButton("📤 APK yuklash", callback_data="admin_upload_apk")],
         [InlineKeyboardButton("📨 Barchaga xabar yuborish", callback_data="admin_broadcast")],
         [InlineKeyboardButton("📊 Statistika", callback_data="admin_stats")],
-        [InlineKeyboardButton("◀️ Chiqish", callback_data="admin_close")]
+        [InlineKeyboardButton("❌ Panelni yopish", callback_data="admin_close")]
     ]
     return InlineKeyboardMarkup(keyboard)
 
 def get_games_keyboard() -> InlineKeyboardMarkup:
+    """Kun stavkalari ro'yxati"""
     keyboard = []
     for game in games_data.keys():
         keyboard.append([InlineKeyboardButton(game, callback_data=f"game_{game}")])
@@ -208,7 +212,7 @@ def get_games_keyboard() -> InlineKeyboardMarkup:
 def get_referral_link(user_id: int) -> str:
     return f"https://t.me/{BOT_USERNAME}?start=ref_{user_id}"
 
-async def ensure_user(user_id: int) -> dict:
+async def ensure_user(user_id: int, username: str = None, first_name: str = None) -> dict:
     user_id_str = str(user_id)
     if user_id_str not in users_data:
         users_data[user_id_str] = {
@@ -216,7 +220,9 @@ async def ensure_user(user_id: int) -> dict:
             "referred_by": None,
             "referrals": 0,
             "start_bonus_given": False,
-            "withdraw_code": generate_unique_code()
+            "withdraw_code": generate_unique_code(),
+            "username": username,
+            "first_name": first_name
         }
         save_users(users_data)
     return users_data[user_id_str]
@@ -231,19 +237,21 @@ async def give_start_bonus(user_id: int, context: ContextTypes.DEFAULT_TYPE):
         try:
             await context.bot.send_message(
                 chat_id=user_id,
-                text=f"🎉 Start bonusi: {START_BONUS} so'm berildi!"
+                text=f"🎉 Tabriklaymiz! Sizga start bonusi sifatida {START_BONUS} so‘m berildi!"
             )
         except:
             pass
 
-# ------------------- START -------------------
+# ------------------- START HANDLER -------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Start komandasi – eski holatidagidek"""
     user = update.effective_user
     user_id = user.id
     args = context.args
 
-    user_data = await ensure_user(user_id)
+    user_data = await ensure_user(user_id, user.username, user.first_name)
 
+    # Referralni tekshirish
     if args and args[0].startswith("ref_"):
         try:
             ref_user_id = int(args[0].replace("ref_", ""))
@@ -252,38 +260,67 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 users_data[str(ref_user_id)]["balance"] += REFERRAL_BONUS
                 users_data[str(ref_user_id)]["referrals"] += 1
                 save_users(users_data)
-                await context.bot.send_message(
-                    chat_id=ref_user_id,
-                    text=f"🎉 Yangi foydalanuvchi qo'shildi! +{REFERRAL_BONUS} so'm"
-                )
+                try:
+                    await context.bot.send_message(
+                        chat_id=ref_user_id,
+                        text=f"🎉 Sizning taklifingiz orqali yangi foydalanuvchi qo‘shildi! Balansingizga {REFERRAL_BONUS} so‘m qo‘shildi."
+                    )
+                except:
+                    pass
         except:
             pass
 
+    # Start bonusini rejalashtirish
     if not user_data.get("start_bonus_given", False):
         asyncio.create_task(give_start_bonus(user_id, context))
 
+    # Eski start xabari
     text = (
-        "🎰 *BetWinner Botiga xush kelibsiz!*\n\n"
-        "✅ Do'stlaringizni taklif qiling va pul ishlang\n"
-        "✅ Kunlik stavkalarni oling\n"
-        "✅ BetWinner APK yuklab oling"
+        "🎰 *BetWinner Bukmekeriga xush kelibsiz!* 🎰\n\n"
+        "🔥 *Premium bonuslar* va har hafta yangi yutuqlar sizni kutmoqda!\n"
+        "📊 *O‘yinlar uchun maxsus signal xizmati* orqali g‘alaba qozonish imkoniyatingizni oshiring.\n\n"
+        "📢 *BetWinner kun kuponlari* va eng so‘nggi aksiyalar haqida tezkor xabarlar!\n"
+        "✅ Kunlik stavkalar, ekspress kuponlar va bonus imkoniyatlaridan birinchi bo‘lib xabardor bo‘ling.\n\n"
+        "💰 Bu yerda nafaqat o‘ynab, balki *pul ishlashingiz* mumkin:\n"
+        "– Do‘stlaringizni taklif qiling va har bir taklif uchun *2500 so‘m* oling.\n"
+        "– Start bonus sifatida *15000 so‘m* hamyoningizga tushadi.\n\n"
+        "👇 Quyidagi tugmalar orqali imkoniyatlarni kashf eting:"
     )
-    await update.message.reply_text(text, parse_mode="Markdown", reply_markup=get_main_keyboard())
+    await update.message.reply_text(
+        text,
+        parse_mode="Markdown",
+        reply_markup=get_main_keyboard()
+    )
 
 async def back_to_main(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Bosh menyuga qaytish"""
     query = update.callback_query
     await query.answer()
-    text = "🎰 *BetWinner Botiga xush kelibsiz!*"
-    await query.message.reply_text(text, parse_mode="Markdown", reply_markup=get_main_keyboard())
+    text = (
+        "🎰 *BetWinner Bukmekeriga xush kelibsiz!* 🎰\n\n"
+        "👇 Quyidagi tugmalar orqali imkoniyatlarni kashf eting:"
+    )
+    await query.message.reply_text(
+        text,
+        parse_mode="Markdown",
+        reply_markup=get_main_keyboard()
+    )
 
 # ------------------- KUN STAVKASI -------------------
 async def show_games(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     if not games_data:
-        await query.message.reply_text("Hozircha stavkalar yo'q.", reply_markup=get_back_keyboard())
+        await query.message.reply_text(
+            "Hozircha kunlik stavkalar mavjud emas. Tez orada yangilanadi!",
+            reply_markup=get_back_keyboard()
+        )
         return
-    await query.message.reply_text("📊 Kun stavkalari:", reply_markup=get_games_keyboard())
+    await query.message.reply_text(
+        "📊 *Bugungi kun stavkalari:*",
+        parse_mode="Markdown",
+        reply_markup=get_games_keyboard()
+    )
 
 async def game_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -291,13 +328,13 @@ async def game_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     game_name = query.data.replace("game_", "")
     game = games_data.get(game_name)
     if not game:
-        await query.message.reply_text("Stavka topilmadi.", reply_markup=get_back_keyboard())
+        await query.message.reply_text("Bu kun stavkasi topilmadi.", reply_markup=get_back_keyboard())
         return
 
     game["views"] = game.get("views", 0) + 1
     save_games(games_data)
 
-    text = game.get("text", "Ma'lumot yo'q")
+    text = game.get("text", "Maʼlumot hozircha kiritilmagan.")
     photo_id = game.get("photo_id")
 
     if photo_id:
@@ -308,72 +345,96 @@ async def game_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=get_back_keyboard()
         )
     else:
-        await query.message.reply_text(text, parse_mode="HTML", reply_markup=get_back_keyboard())
+        await query.message.reply_text(
+            text,
+            parse_mode="HTML",
+            reply_markup=get_back_keyboard()
+        )
 
 # ------------------- APK -------------------
 async def show_apk(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    text = apk_data.get("text", "📱 BetWinner APK")
+    text = apk_data.get("text", "📱 BetWinner APK dasturini yuklab oling!")
     file_id = apk_data.get("file_id")
     
     if file_id:
         keyboard = [
-            [InlineKeyboardButton("📥 Yuklash", callback_data="download_apk")],
+            [InlineKeyboardButton("📥 APK yuklash", callback_data="download_apk")],
             [InlineKeyboardButton("◀️ Bosh menyu", callback_data="main_menu")]
         ]
         await query.message.reply_text(
             text,
+            parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
     else:
-        await query.message.reply_text("APK hozircha yo'q.", reply_markup=get_back_keyboard())
+        await query.message.reply_text(
+            "❌ Hozircha APK fayli mavjud emas. Tez orada yuklanadi!",
+            reply_markup=get_back_keyboard()
+        )
 
 async def download_apk(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     file_id = apk_data.get("file_id")
     if file_id:
-        await query.message.reply_document(document=file_id, reply_markup=get_back_keyboard())
+        await query.message.reply_document(
+            document=file_id,
+            caption="📱 BetWinner APK",
+            reply_markup=get_back_keyboard()
+        )
     else:
-        await query.message.reply_text("APK yo'q.", reply_markup=get_back_keyboard())
+        await query.message.reply_text("❌ APK fayli mavjud emas.", reply_markup=get_back_keyboard())
 
-# ------------------- PUL ISHLASH -------------------
+# ------------------- PUL ISHLASH VA BALANS -------------------
 async def earn_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
+    referral_link = get_referral_link(query.from_user.id)
+    share_url = f"https://t.me/share/url?url={referral_link}&text=Bu%20bot%20orqali%20pul%20ishlash%20mumkin!%20Keling%2C%20birga%20boshlaymiz."
+    
     text = (
-        "💰 *Pul ishlash*\n\n"
-        f"• Do'st taklif qilish: +{REFERRAL_BONUS} so'm\n"
-        f"• Start bonusi: +{START_BONUS} so'm\n"
-        f"• Minimal yechish: {MIN_WITHDRAW} so'm\n\n"
-        f"Sizning havolangiz:\n`{get_referral_link(query.from_user.id)}`"
+        "💰 *BetWinner bilan qanday qilib pul ishlash mumkin?*\n\n"
+        f"1️⃣ Do‘stlaringizni taklif qiling va har bir taklif uchun *{REFERRAL_BONUS} so‘m* oling.\n"
+        f"2️⃣ Start bonus sifatida *{START_BONUS} so‘m* hamyoningizga tushadi.\n"
+        f"3️⃣ Minimal yechish summasi: *{MIN_WITHDRAW} so‘m*.\n\n"
+        f"Sizning referral havolangiz:\n`{referral_link}`"
     )
     
     keyboard = [
-        [InlineKeyboardButton("📤 Ulashish", url=f"https://t.me/share/url?url={get_referral_link(query.from_user.id)}")],
+        [InlineKeyboardButton("📤 Ulashish", url=share_url)],
         [InlineKeyboardButton("💸 Pul chiqarish", callback_data="withdraw")],
         [InlineKeyboardButton("◀️ Bosh menyu", callback_data="main_menu")]
     ]
-    await query.message.reply_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+    await query.message.reply_text(
+        text,
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
 
 async def balance_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user_data = await ensure_user(query.from_user.id)
+    
     text = (
-        f"💵 *Balans*\n\n"
-        f"Balans: {user_data['balance']} so'm\n"
-        f"Do'stlar: {user_data['referrals']}\n"
-        f"Minimal yechish: {MIN_WITHDRAW} so'm"
+        f"💵 *Sizning balansingiz:*\n\n"
+        f"Balans: *{user_data['balance']} so‘m*\n"
+        f"Taklif qilgan do‘stlaringiz: *{user_data['referrals']}*\n\n"
+        f"Minimal yechish summasi: {MIN_WITHDRAW} so‘m."
     )
     keyboard = [
         [InlineKeyboardButton("💸 Pul chiqarish", callback_data="withdraw")],
         [InlineKeyboardButton("◀️ Bosh menyu", callback_data="main_menu")]
     ]
-    await query.message.reply_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+    await query.message.reply_text(
+        text,
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
 
 async def withdraw_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -382,23 +443,27 @@ async def withdraw_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if user_data['balance'] < MIN_WITHDRAW:
         await query.message.reply_text(
-            f"❌ Yetarli balans yo'q. Sizda: {user_data['balance']} so'm",
+            f"❌ Pul chiqarish uchun minimal balans {MIN_WITHDRAW} so‘m. Sizda {user_data['balance']} so‘m bor.",
             reply_markup=get_back_keyboard()
         )
         return
     
     text = (
         f"💸 *Pul chiqarish*\n\n"
-        f"Kodingiz: `{user_data['withdraw_code']}`\n"
-        f"Saytga o'ting va kodni kiriting:"
+        f"Sizning maxsus 7 xonali kodingiz: `{user_data['withdraw_code']}`\n"
+        f"Pul yechish uchun quyidagi tugma orqali saytga o‘ting va kodni kiriting."
     )
     keyboard = [
-        [InlineKeyboardButton("💳 Sayt", url=WITHDRAW_SITE_URL)],
+        [InlineKeyboardButton("💳 Saytga o‘tish", url=WITHDRAW_SITE_URL)],
         [InlineKeyboardButton("◀️ Bosh menyu", callback_data="main_menu")]
     ]
-    await query.message.reply_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+    await query.message.reply_text(
+        text,
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
 
-# ------------------- ADMIN -------------------
+# ------------------- ADMIN PANEL -------------------
 ADD_NAME, ADD_TEXT, ADD_PHOTO = range(3)
 APK_UPLOAD = 3
 BROADCAST_MSG = 4
@@ -407,7 +472,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
         await update.message.reply_text("Siz admin emassiz.")
         return
-    await update.message.reply_text("👨‍💻 Admin panel:", reply_markup=get_admin_keyboard())
+    await update.message.reply_text("👨‍💻 Admin paneli:", reply_markup=get_admin_keyboard())
 
 async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -418,31 +483,35 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     data = query.data
+    logger.info(f"Admin callback: {data}")
 
     if data == "admin_add_game":
         context.user_data.clear()
-        await query.message.reply_text("Yangi kun stavkasi nomini kiriting:")
+        await query.message.reply_text("Yangi kun stavkasi nomini kiriting (masalan: 'Futbol kuponlari'):")
         return ADD_NAME
 
     elif data == "admin_upload_apk":
         context.user_data.clear()
-        await query.message.reply_text("APK faylini yuboring (.apk):")
+        await query.message.reply_text("📤 APK faylini yuboring (.apk formatida):")
         return APK_UPLOAD
 
     elif data == "admin_broadcast":
         context.user_data.clear()
-        await query.message.reply_text("Barchaga yuboriladigan xabarni kiriting:")
+        await query.message.reply_text("📨 Barchaga yuboriladigan xabarni kiriting (matn yoki rasm):")
         return BROADCAST_MSG
 
     elif data == "admin_stats":
         total_users = len(users_data)
         total_games = len(games_data)
         total_views = sum(g.get('views', 0) for g in games_data.values())
+        total_balance = sum(u.get('balance', 0) for u in users_data.values())
+        
         text = (
             f"📊 *Statistika*\n\n"
-            f"👥 Foydalanuvchilar: {total_users}\n"
-            f"🎮 Kun stavkalari: {total_games}\n"
-            f"👀 Ko'rishlar: {total_views}"
+            f"👥 Foydalanuvchilar: *{total_users}*\n"
+            f"🎮 Kun stavkalari: *{total_games}*\n"
+            f"👀 Ko'rishlar: *{total_views}*\n"
+            f"💰 Umumiy balans: *{total_balance} so'm*"
         )
         await query.message.reply_text(text, parse_mode="Markdown", reply_markup=get_admin_keyboard())
 
@@ -453,19 +522,19 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def add_game_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     name = update.message.text.strip()
     if not name:
-        await update.message.reply_text("Nomni kiriting:")
+        await update.message.reply_text("Nom bo‘sh bo‘lishi mumkin emas. Qayta kiriting:")
         return ADD_NAME
     if name in games_data:
-        await update.message.reply_text("Bunday nom bor. Boshqa nom kiriting:")
+        await update.message.reply_text("Bu nom allaqachon mavjud. Boshqa nom kiriting:")
         return ADD_NAME
     
     context.user_data['game_name'] = name
-    await update.message.reply_text("Matn kiriting (HTML formatida):")
+    await update.message.reply_text("Endi kun stavkasi matnini kiriting (HTML teglar bilan):")
     return ADD_TEXT
 
 async def add_game_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['game_text'] = update.message.text
-    await update.message.reply_text("Rasm yuboring (ixtiyoriy, /skip):")
+    await update.message.reply_text("Rasm yuboring (ixtiyoriy) yoki /skip ni bosing:")
     return ADD_PHOTO
 
 async def add_game_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -479,7 +548,10 @@ async def add_game_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         'views': 0
     }
     save_games(games_data)
-    await update.message.reply_text("✅ Kun stavkasi qo'shildi!", reply_markup=get_admin_keyboard())
+    await update.message.reply_text(
+        f"✅ '{context.user_data['game_name']}' kun stavkasi qo‘shildi!",
+        reply_markup=get_admin_keyboard()
+    )
     context.user_data.clear()
     return ConversationHandler.END
 
@@ -490,22 +562,34 @@ async def add_game_photo_skip(update: Update, context: ContextTypes.DEFAULT_TYPE
         'views': 0
     }
     save_games(games_data)
-    await update.message.reply_text("✅ Kun stavkasi qo'shildi!", reply_markup=get_admin_keyboard())
+    await update.message.reply_text(
+        f"✅ '{context.user_data['game_name']}' kun stavkasi qo‘shildi!",
+        reply_markup=get_admin_keyboard()
+    )
     context.user_data.clear()
     return ConversationHandler.END
 
 # ------------------- APK UPLOAD -------------------
 async def apk_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.document and update.message.document.file_name.endswith('.apk'):
+    if update.message.document:
+        file_name = update.message.document.file_name
         file_id = update.message.document.file_id
-        apk_data['file_id'] = file_id
-        save_apk(apk_data)
-        await update.message.reply_text("✅ APK yuklandi!", reply_markup=get_admin_keyboard())
+        
+        if file_name.endswith('.apk'):
+            apk_data['file_id'] = file_id
+            save_apk(apk_data)
+            await update.message.reply_text(
+                f"✅ APK fayli muvaffaqiyatli yuklandi!\n\nFayl: {file_name}",
+                reply_markup=get_admin_keyboard()
+            )
+            context.user_data.clear()
+            return ConversationHandler.END
+        else:
+            await update.message.reply_text("❌ Noto'g'ri format. Faqat .apk fayllar qabul qilinadi. Qayta urinib ko'ring:")
+            return APK_UPLOAD
     else:
-        await update.message.reply_text("❌ .apk fayl yuboring!")
+        await update.message.reply_text("❌ Iltimos, APK fayl yuboring:")
         return APK_UPLOAD
-    context.user_data.clear()
-    return ConversationHandler.END
 
 # ------------------- BROADCAST -------------------
 async def broadcast_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -513,30 +597,43 @@ async def broadcast_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     success = 0
     fail = 0
     
-    status = await update.message.reply_text("📨 Xabar yuborilmoqda...")
+    status_msg = await update.message.reply_text("📨 Xabar yuborilmoqda...")
     
     for user_id_str in users_data.keys():
         try:
+            user_id = int(user_id_str)
+            
             if message.text:
-                await context.bot.send_message(chat_id=int(user_id_str), text=message.text)
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=message.text,
+                    parse_mode="HTML"
+                )
             elif message.photo:
                 await context.bot.send_photo(
-                    chat_id=int(user_id_str),
+                    chat_id=user_id,
                     photo=message.photo[-1].file_id,
-                    caption=message.caption
+                    caption=message.caption,
+                    parse_mode="HTML" if message.caption else None
                 )
             success += 1
-        except:
+        except Exception as e:
             fail += 1
+            logger.error(f"Xatolik {user_id_str}: {e}")
     
-    await status.edit_text(f"✅ Yuborildi: {success}\n❌ Yuborilmadi: {fail}")
+    await status_msg.edit_text(
+        f"📨 *Xabar yuborish yakunlandi!*\n\n"
+        f"✅ Muvaffaqiyatli: *{success}*\n"
+        f"❌ Muvaffaqiyatsiz: *{fail}*",
+        parse_mode="Markdown"
+    )
     await update.message.reply_text("✅ Broadcast tugadi!", reply_markup=get_admin_keyboard())
     context.user_data.clear()
     return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
-    await update.message.reply_text("Bekor qilindi.", reply_markup=get_admin_keyboard())
+    await update.message.reply_text("❌ Bekor qilindi.", reply_markup=get_admin_keyboard())
     return ConversationHandler.END
 
 # ------------------- MAIN -------------------
