@@ -5,12 +5,12 @@ import asyncio
 import random
 from pathlib import Path
 from typing import Dict
-from datetime import datetime
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
     CommandHandler,
+    CallbackQueryHandler,  # Bu qator qo'shilgan
     MessageHandler,
     filters,
     ContextTypes,
